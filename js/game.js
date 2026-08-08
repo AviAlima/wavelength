@@ -3,7 +3,7 @@ import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimesta
 import { firebaseConfig } from "./firebase-config.js";
 import { SPECTRA } from "./spectra.js";
 
-const VERSION = "1.0.4";
+const VERSION = "1.0.5";
 document.getElementById("version").textContent = VERSION;
 
 initializeApp(firebaseConfig);
@@ -175,9 +175,9 @@ function renderGame() {
   if (!r) return;
   const isGiver = r.giver === myId;
   const isGuesser = r.guesser === myId;
-  const cluePhase = r.phase === "clue";
-  const guessPhase = r.phase === "guess";
-  const revealPhase = r.phase === "reveal";
+  const cluePhase = roomData.phase === "clue";
+  const guessPhase = roomData.phase === "guess";
+  const revealPhase = roomData.phase === "reveal";
 
   $("game-code").textContent = roomData.code;
   $("score").textContent = roomData.score;
