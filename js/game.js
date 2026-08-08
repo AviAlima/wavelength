@@ -3,7 +3,7 @@ import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimesta
 import { firebaseConfig } from "./firebase-config.js";
 import { SPECTRA } from "./spectra.js";
 
-const VERSION = "1.0.3";
+const VERSION = "1.0.4";
 document.getElementById("version").textContent = VERSION;
 
 initializeApp(firebaseConfig);
@@ -140,7 +140,7 @@ function renderLobby() {
   });
   const pList = Object.values(roomData.players || {});
   const n = pList.length;
-  const start = $("lobby-start");
+  const start = $("btn-start");
   start.hidden = false;
   start.disabled = n < 2;
   start.textContent = n < 2 ? `Start game (${n}/2 players)` : "Start game";
