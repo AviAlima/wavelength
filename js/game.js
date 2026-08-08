@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
-import { firebaseConfig } from "./firebase-config.js";
-import { SPECTRA } from "./spectra.js";
+import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
+import { firebaseConfig } from "./firebase-config.mjs";
+import { pointsFor, startGameTransaction, nextRoundTransaction } from "./game-logic.mjs";
 
-const VERSION = "1.0.5";
+const VERSION = "1.0.6";
 document.getElementById("version").textContent = VERSION;
 
 initializeApp(firebaseConfig);
@@ -17,14 +17,6 @@ const makeCode = () => {
   let c = "";
   for (let i = 0; i < 5; i++) c += chars[Math.floor(Math.random() * chars.length)];
   return c;
-};
-const pointsFor = (t, g) => {
-  const d = Math.abs(t - g);
-  if (d < 10) return 4;
-  if (d < 20) return 3;
-  if (d < 30) return 2;
-  if (d < 40) return 1;
-  return 0;
 };
 
 const COLORS = ["#38bdf8", "#f472b6", "#a78bfa", "#fbbf24", "#34d399", "#fb7185"];
@@ -103,12 +95,23 @@ function openRoom(code) {
 }
 
 function leaveRoom() {
+  if (roomCode && roomData) {
+    try {
+      updateDoc(ref(), { [`players.${myId}`]: deleteField() });
+    } catch (e) { /* ignore */ }
+  }
   if (unsub) unsub();
   roomCode = null;
   roomData = null;
   unsub = null;
   show("home");
 }
+
+$("btn-copy").addEventListener("click", async () => {
+  if (!roomData) return;
+  try { await navigator.clipboard.writeText(roomData.code); }
+  catch { prompt("Party code:", roomData.code); }
+});
 
 $("btn-create").addEventListener("click", createRoom);
 $("join-input").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
@@ -150,23 +153,9 @@ function renderLobby() {
 /* ---------- game ---------- */
 
 $("btn-start").addEventListener("click", async () => {
-  const pids = Object.keys(roomData.players);
-  const giver = pids[Math.floor(Math.random() * pids.length)];
-  const sp = SPECTRA[Math.floor(Math.random() * SPECTRA.length)];
-  await updateDoc(ref(), {
-    phase: "clue",
-    round: {
-      n: 1,
-      giver,
-      guesser: pids.find((p) => p !== giver),
-      left: sp[0],
-      right: sp[1],
-      target: 3 + Math.floor(Math.random() * 94),
-      clue: "",
-      guess: null,
-      scored: false,
-    },
-  });
+  try {
+    await startGameTransaction(db, ref());
+  } catch (err) { alert("Failed to start: " + err.message); }
 });
 
 function renderGame() {
@@ -241,26 +230,11 @@ $("btn-lock").addEventListener("click", async () => {
 });
 
 $("btn-next").addEventListener("click", async () => {
-  const r = roomData.round;
-  if (r.scored) return;
-  r.scored = true;
-  const score = roomData.score + pointsFor(r.target, r.guess);
-  const sp = SPECTRA[Math.floor(Math.random() * SPECTRA.length)];
-  await updateDoc(ref(), {
-    score,
-    phase: "clue",
-    round: {
-      n: r.n + 1,
-      giver: r.guesser,
-      guesser: r.giver,
-      left: sp[0],
-      right: sp[1],
-      target: 3 + Math.floor(Math.random() * 94),
-      clue: "",
-      guess: null,
-      scored: false,
-    },
-  });
+  const n = roomData.round?.n;
+  if (!n) return;
+  try {
+    await nextRoundTransaction(db, ref(), n);
+  } catch (err) { alert("Failed: " + err.message); }
 });
 
 /* ---------- dial ---------- */

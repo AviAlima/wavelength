@@ -1,0 +1,11 @@
+{
+  "name": "wavelength",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sim": "node sim/sim.js"
+  },
+  "dependencies": {
+    "firebase": "10.12.2"
+  }
+}

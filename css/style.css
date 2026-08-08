@@ -108,6 +108,8 @@ button:disabled { opacity: .5; }
   color: var(--muted);
 }
 .code-chip b { color: var(--accent); font-size: 16px; letter-spacing: 3px; }
+.code-row { display: flex; align-items: center; gap: 10px; }
+.small-btn { width: auto; padding: 9px 16px; font-size: 14px; }
 .code-chip.small { font-size: 12px; }
 .code-chip.small span { color: var(--accent); letter-spacing: 2px; font-weight: 700; }
 
