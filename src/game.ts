@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
+import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.1.2";
+const VERSION = "1.1.3";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -21,9 +21,9 @@ const makeCode = () => {
 
 const COLORS = ["#38bdf8", "#f472b6", "#a78bfa", "#fbbf24", "#34d399", "#fb7185"];
 
-const storedId = localStorage.getItem("wave_id");
+const storedId = sessionStorage.getItem("wave_id") || localStorage.getItem("wave_id");
 const myId: string = storedId || uid();
-localStorage.setItem("wave_id", myId);
+sessionStorage.setItem("wave_id", myId);
 
 let roomCode: string | null = null;
 let roomData: RoomData | null = null;
@@ -50,6 +50,7 @@ async function createRoom() {
     await setDoc(doc(db, "rooms", code), {
       code,
       createdAt: serverTimestamp(),
+      host: myId,
       players: { [myId]: { id: myId, name: myName(), color: COLORS[0] } },
       phase: "lobby",
       score: 0,
@@ -90,7 +91,11 @@ function openRoom(code: string) {
   roomCode = code;
   if (unsub) unsub();
   unsub = onSnapshot(doc(db, "rooms", code), { includeMetadataChanges: true }, (snap) => {
-    if (!snap.exists()) return;
+    if (!snap.exists()) {
+      alert("The party was closed by the other player");
+      leaveRoom();
+      return;
+    }
     roomData = snap.data() as RoomData;
     setSync(!!(snap.metadata.hasPendingWrites || snap.metadata.fromCache));
     render();
@@ -101,10 +106,17 @@ const setSync = (warn: boolean) => {
   $("sync-dot").classList.toggle("warn", warn);
 };
 
-function leaveRoom() {
+async function leaveRoom() {
   if (roomCode && roomData) {
     try {
-      updateDoc(ref(), { [`players.${myId}`]: deleteField() });
+      if (roomData.phase === "lobby") {
+        await updateDoc(ref(), { [`players.${myId}`]: deleteField() });
+        if (Object.keys(roomData.players).filter((p) => p !== myId).length === 0) {
+          await deleteDoc(ref());
+        }
+      } else {
+        await deleteDoc(ref());
+      }
     } catch (e) { /* ignore */ }
   }
   if (unsub) unsub();
@@ -149,11 +161,13 @@ function renderLobby() {
     list.append(row);
   });
   const n = Object.values(roomData!.players).length;
+  const isHost = roomData!.host === myId;
   const start = $("btn-start") as HTMLButtonElement;
-  start.hidden = false;
+  start.hidden = !isHost;
   start.disabled = n < 2;
   start.textContent = n < 2 ? `Start game (${n}/2 players)` : "Start game";
   $("lobby-waiting").hidden = n >= 2;
+  $("lobby-note").hidden = isHost || n < 2;
 }
 
 /* ---------- game ---------- */

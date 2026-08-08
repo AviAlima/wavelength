@@ -22,6 +22,7 @@ export interface Round {
 
 export interface RoomData {
   code: string;
+  host: string;
   players: Record<string, Player>;
   phase: RoomPhase;
   score: number;
