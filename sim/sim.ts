@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { firebaseConfig } from "../src/firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "../src/game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, pickSpectrumIndex, type RoomData } from "../src/game-logic.js";
+import { SPECTRA } from "../src/spectra.js";
 
 const appA = initializeApp(firebaseConfig, "simA");
 const appB = initializeApp(firebaseConfig, "simB");
@@ -110,8 +111,54 @@ async function main() {
   assert(eq(a.round, b.round), "double next: both players see the same new round");
 }
 
-  console.log(`\nAll ${passed} assertions passed.`);
-  for (const c of cleanup) {
+  console.log("--- test: round summary after N questions, score accumulates across rounds ---");
+  {
+  const c = await makeRoom();
+  await updateDoc(roomRef(dbA, c), { questionsPerRound: 2 });
+  await startGameTransaction(dbA, roomRef(dbA, c));
+  let a = await read(dbA, c);
+  let acc = 0;
+  for (let i = 0; i < 2; i++) {
+    await updateDoc(roomRef(dbA, c), { phase: "guess", "round.clue": `clue ${i}` });
+    await updateDoc(roomRef(dbA, c), { phase: "reveal", "round.guess": 50 });
+    const st = await read(dbA, c);
+    const res = await nextRoundTransaction(dbA, roomRef(dbA, c), st.round!.n);
+    assert(!!res, `next after question ${i + 1} commits`);
+    acc += res!.points;
+    a = await read(dbA, c);
+  }
+  assert(a.phase === "summary", "after questionsPerRound questions the round ends in summary");
+  assert(a.score === acc, `score accumulated across the round (${acc})`);
+  assert(a.roundScore === acc, "roundScore holds the round's points");
+
+  const guesserQ2 = a.round!.guesser;
+  const res = await continueTransaction(dbA, roomRef(dbA, c), a.round!.n);
+  assert(!!res && res.n === a.round!.n + 1, "continue starts the next round");
+  a = await read(dbA, c);
+  const b = await read(dbB, c);
+  assert(a.phase === "clue", "continue moves back into clue phase");
+  assert(a.round!.giver === guesserQ2, "giver alternates across round boundary");
+  assert(a.roundScore === 0, "roundScore resets for the new round");
+  assert(a.score === acc, "total score survives across rounds");
+  assert(eq(a.round, b.round), "continue: both players see the identical new round");
+}
+
+  console.log("--- test: spectra do not repeat within a game ---");
+  {
+  let used: number[] = [];
+  const seen: number[] = [];
+  for (let i = 0; i < SPECTRA.length; i++) {
+    const pick = pickSpectrumIndex(used);
+    assert(!used.includes(pick.idx), `spectrum ${i + 1} is fresh (no repeat)`);
+    seen.push(pick.idx);
+    used = pick.used;
+  }
+  assert(new Set(seen).size === SPECTRA.length, "all spectra used exactly once before any repeat");
+  const re = pickSpectrumIndex(used);
+  assert(used.includes(re.idx) || seen.includes(re.idx), "after exhaustion the pool resets");
+}
+
+  console.log(`\nAll ${passed} assertions passed.`);  for (const c of cleanup) {
     try { await deleteDoc(roomRef(dbA, c)); } catch { /* ignore */ }
   }
 }

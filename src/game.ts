@@ -1,9 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -31,7 +31,7 @@ let draftGuess = 50;
 let resetRoundN = 0;
 
 const ref = () => doc(db, "rooms", roomCode!);
-const screens: Record<string, HTMLElement> = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game") };
+const screens: Record<string, HTMLElement> = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game"), summary: $("screen-summary") };
 const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
 const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 
@@ -56,6 +56,7 @@ async function createRoom() {
       players: { [id]: { id, name: myName(), color: COLORS[0] } },
       phase: "lobby",
       score: 0,
+      questionsPerRound: 6,
       round: null,
     });
     openRoom(code);
@@ -149,12 +150,24 @@ $("btn-create").addEventListener("click", createRoom);
 $("btn-join").addEventListener("click", joinRoom);
 $("btn-leave").addEventListener("click", leaveRoom);
 $("btn-leave-game").addEventListener("click", leaveRoom);
+$("btn-end").addEventListener("click", leaveRoom);
+
+($("qpr-input") as HTMLInputElement).addEventListener("change", async () => {
+  const inp = $("qpr-input") as HTMLInputElement;
+  let v = parseInt(inp.value, 10);
+  if (isNaN(v)) v = DEFAULT_QUESTIONS_PER_ROUND;
+  v = Math.max(1, Math.min(20, v));
+  inp.value = String(v);
+  if (!roomCode) return;
+  try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert("Failed: " + (e as Error).message); }
+});
 
 /* ---------- render ---------- */
 
 function render() {
   if (!roomData) return;
   if (roomData.phase === "lobby") renderLobby();
+  else if (roomData.phase === "summary") renderSummary();
   else renderGame();
 }
 
@@ -180,6 +193,31 @@ function renderLobby() {
   start.textContent = n < 2 ? `Start game (${n}/2 players)` : "Start game";
   $("lobby-waiting").hidden = n >= 2;
   $("lobby-note").hidden = isHost || n < 2;
+  const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  if (isHost) {
+    $("qpr-wrap").hidden = false;
+    $("lobby-qpr").hidden = true;
+    const inp = $("qpr-input") as HTMLInputElement;
+    if (document.activeElement !== inp) inp.value = String(qpr);
+  } else {
+    $("qpr-wrap").hidden = true;
+    $("lobby-qpr").hidden = false;
+    $("lobby-qpr").textContent = `Questions per round: ${qpr}`;
+  }
+}
+
+function renderSummary() {
+  show("summary");
+  const d = roomData!;
+  const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  const n = d.round?.n ?? 0;
+  const group = Math.max(1, Math.ceil(n / qpr));
+  $("summary-title").textContent = `Round ${group} complete!`;
+  $("summary-round").textContent = `${qpr} questions played, +${d.roundScore ?? 0} points this round`;
+  $("summary-total").textContent = `Total score: ${d.score}`;
+  const isHost = d.host === myPlayerId;
+  $("btn-continue").hidden = !isHost;
+  $("summary-wait").hidden = isHost;
 }
 
 /* ---------- game ---------- */
@@ -203,6 +241,7 @@ function renderGame() {
   $("game-code").textContent = roomData!.code;
   $("score").textContent = String(roomData!.score);
   $("round-num").textContent = String(r.n);
+  $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
   $("round-info").textContent = `${roomData!.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
   $("spec-left").textContent = r.left;
   $("spec-right").textContent = r.right;
@@ -248,7 +287,17 @@ function renderGame() {
     $("guess-dial").hidden = !guessPhase;
   }
   $("reveal-panel").hidden = !revealPhase;
+  const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  $("btn-next").textContent = r.n % qpr === 0 ? "Finish round" : "Next question";
 }
+
+$("btn-continue").addEventListener("click", async () => {
+  const n = roomData?.round?.n;
+  if (!n) return;
+  try {
+    await continueTransaction(db, ref(), n);
+  } catch (err) { alert("Failed: " + (err as Error).message); }
+});
 
 $("btn-send").addEventListener("click", async () => {
   const clue = ($("clue-input") as HTMLInputElement).value.trim();

@@ -1,7 +1,7 @@
 import { runTransaction, type Firestore, type DocumentReference } from "firebase/firestore";
 import { SPECTRA } from "./spectra.js";
 
-export type RoomPhase = "lobby" | "clue" | "guess" | "reveal";
+export type RoomPhase = "lobby" | "clue" | "guess" | "reveal" | "summary";
 
 export interface Player {
   id: string;
@@ -27,7 +27,12 @@ export interface RoomData {
   phase: RoomPhase;
   score: number;
   round: Round | null;
+  questionsPerRound?: number;
+  roundScore?: number;
+  usedSpectra?: number[];
 }
+
+export const DEFAULT_QUESTIONS_PER_ROUND = 6;
 
 export const pointsFor = (target: number, guess: number): number => {
   const d = Math.abs(target - guess);
@@ -38,8 +43,16 @@ export const pointsFor = (target: number, guess: number): number => {
   return 0;
 };
 
-export const makeRound = (n: number, giver: string, guesser: string): Round => {
-  const sp = SPECTRA[Math.floor(Math.random() * SPECTRA.length)];
+export const pickSpectrumIndex = (used: number[]): { idx: number; used: number[] } => {
+  const all = SPECTRA.map((_, i) => i);
+  const available = all.filter((i) => !used.includes(i));
+  const pool = available.length ? available : all;
+  const idx = pool[Math.floor(Math.random() * pool.length)];
+  return { idx, used: [...used.filter((i) => i !== idx), idx] };
+};
+
+export const makeRound = (n: number, giver: string, guesser: string, spectrumIdx: number): Round => {
+  const sp = SPECTRA[spectrumIdx];
   return {
     n,
     giver,
@@ -61,8 +74,9 @@ export const startGameTransaction = async (db: Firestore, roomRef: DocumentRefer
     if (pids.length < 2) return null;
     const giver = pids[Math.floor(Math.random() * pids.length)];
     const guesser = pids.find((p) => p !== giver)!;
-    const round = makeRound(1, giver, guesser);
-    tx.update(roomRef, { phase: "clue", round });
+    const pick = pickSpectrumIndex([]);
+    const round = makeRound(1, giver, guesser, pick.idx);
+    tx.update(roomRef, { phase: "clue", round, roundScore: 0, usedSpectra: pick.used });
     return round;
   });
 };
@@ -71,7 +85,7 @@ export const nextRoundTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
   expectedN: number,
-): Promise<{ points: number; round: Round } | null> => {
+): Promise<{ points: number; round: Round; ended: boolean } | null> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
@@ -79,8 +93,34 @@ export const nextRoundTransaction = async (
     const r = data.round;
     if (!r || r.n !== expectedN || r.guess == null) return null;
     const pts = pointsFor(r.target, r.guess);
-    const round = makeRound(r.n + 1, r.guesser, r.giver);
-    tx.update(roomRef, { score: data.score + pts, phase: "clue", round });
-    return { points: pts, round };
+    const score = data.score + pts;
+    const roundScore = (data.roundScore ?? 0) + pts;
+    const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+    if (r.n % qpr === 0) {
+      tx.update(roomRef, { score, roundScore, phase: "summary" });
+      return { points: pts, round: r, ended: true };
+    }
+    const pick = pickSpectrumIndex(data.usedSpectra ?? []);
+    const round = makeRound(r.n + 1, r.guesser, r.giver, pick.idx);
+    tx.update(roomRef, { score, roundScore, usedSpectra: pick.used, phase: "clue", round });
+    return { points: pts, round, ended: false };
+  });
+};
+
+export const continueTransaction = async (
+  db: Firestore,
+  roomRef: DocumentReference,
+  expectedN: number,
+): Promise<Round | null> => {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef);
+    const data = snap.data() as RoomData | undefined;
+    if (!snap.exists() || !data || data.phase !== "summary") return null;
+    const r = data.round;
+    if (!r || r.n !== expectedN) return null;
+    const pick = pickSpectrumIndex(data.usedSpectra ?? []);
+    const round = makeRound(r.n + 1, r.guesser, r.giver, pick.idx);
+    tx.update(roomRef, { roundScore: 0, usedSpectra: pick.used, phase: "clue", round });
+    return round;
   });
 };
