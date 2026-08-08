@@ -3,7 +3,7 @@ import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, dele
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.1.3";
+const VERSION = "1.2.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -21,9 +21,8 @@ const makeCode = () => {
 
 const COLORS = ["#38bdf8", "#f472b6", "#a78bfa", "#fbbf24", "#34d399", "#fb7185"];
 
-const storedId = sessionStorage.getItem("wave_id") || localStorage.getItem("wave_id");
-const myId: string = storedId || uid();
-sessionStorage.setItem("wave_id", myId);
+const freshId = () => uid();
+let myPlayerId: string | null = sessionStorage.getItem("wave_player_id");
 
 let roomCode: string | null = null;
 let roomData: RoomData | null = null;
@@ -47,11 +46,14 @@ async function createRoom() {
   if (!nickInput.value.trim()) { nickInput.focus(); return; }
   const code = makeCode();
   try {
+    const id = freshId();
+    sessionStorage.setItem("wave_player_id", id);
+    myPlayerId = id;
     await setDoc(doc(db, "rooms", code), {
       code,
       createdAt: serverTimestamp(),
-      host: myId,
-      players: { [myId]: { id: myId, name: myName(), color: COLORS[0] } },
+      host: id,
+      players: { [id]: { id, name: myName(), color: COLORS[0] } },
       phase: "lobby",
       score: 0,
       round: null,
@@ -71,17 +73,20 @@ async function joinRoom() {
     const data = snap.data() as RoomData;
     const pids = Object.keys(data.players);
     if (data.phase !== "lobby") {
-      if (pids.includes(myId)) { openRoom(code); return; }
+      if (myPlayerId && pids.includes(myPlayerId)) { openRoom(code); return; }
       alert("The game already started");
       return;
     }
-    if (pids.includes(myId)) {
+    if (myPlayerId && pids.includes(myPlayerId)) {
       openRoom(code);
       return;
     }
     if (pids.length >= 2) { alert("Room is full"); return; }
+    const id = freshId();
+    sessionStorage.setItem("wave_player_id", id);
+    myPlayerId = id;
     await updateDoc(doc(db, "rooms", code), {
-      [`players.${myId}`]: { id: myId, name: myName(), color: COLORS[pids.length] },
+      [`players.${id}`]: { id, name: myName(), color: COLORS[pids.length] },
     });
     openRoom(code);
   } catch (err) { alert("Could not join: " + (err as Error).message); }
@@ -109,16 +114,23 @@ const setSync = (warn: boolean) => {
 async function leaveRoom() {
   if (roomCode && roomData) {
     try {
+      const isHost = roomData.host === myPlayerId;
       if (roomData.phase === "lobby") {
-        await updateDoc(ref(), { [`players.${myId}`]: deleteField() });
-        if (Object.keys(roomData.players).filter((p) => p !== myId).length === 0) {
+        if (isHost) {
           await deleteDoc(ref());
+        } else {
+          await updateDoc(ref(), { [`players.${myPlayerId}`]: deleteField() });
+          if (Object.keys(roomData.players).filter((p) => p !== myPlayerId).length === 0) {
+            await deleteDoc(ref());
+          }
         }
       } else {
         await deleteDoc(ref());
       }
     } catch (e) { /* ignore */ }
   }
+  sessionStorage.removeItem("wave_player_id");
+  myPlayerId = null;
   if (unsub) unsub();
   roomCode = null;
   roomData = null;
@@ -157,11 +169,11 @@ function renderLobby() {
     const dot = document.createElement("span");
     dot.className = "dot";
     dot.style.background = p.color;
-    row.append(dot, document.createTextNode(`${p.name}${p.id === myId ? " (you)" : ""}`));
+    row.append(dot, document.createTextNode(`${p.name}${p.id === myPlayerId ? " (you)" : ""}`));
     list.append(row);
   });
   const n = Object.values(roomData!.players).length;
-  const isHost = roomData!.host === myId;
+  const isHost = roomData!.host === myPlayerId;
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
   start.disabled = n < 2;
@@ -182,8 +194,8 @@ function renderGame() {
   show("game");
   const r = roomData!.round;
   if (!r) return;
-  const isGiver = r.giver === myId;
-  const isGuesser = r.guesser === myId;
+  const isGiver = r.giver === myPlayerId;
+  const isGuesser = r.guesser === myPlayerId;
   const cluePhase = roomData!.phase === "clue";
   const guessPhase = roomData!.phase === "guess";
   const revealPhase = roomData!.phase === "reveal";
@@ -266,7 +278,7 @@ $("btn-next").addEventListener("click", async () => {
 const dialBar = $("dial-bar");
 let dragging = false;
 const move = (e: PointerEvent) => {
-  if (!roomData || roomData.phase !== "guess" || roomData.round?.guesser !== myId) return;
+  if (!roomData || roomData.phase !== "guess" || roomData.round?.guesser !== myPlayerId) return;
   const rect = dialBar.getBoundingClientRect();
   let x = e.clientX - rect.left;
   x = Math.max(0, Math.min(rect.width, x));
