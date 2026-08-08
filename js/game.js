@@ -3,6 +3,9 @@ import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimesta
 import { firebaseConfig } from "./firebase-config.js";
 import { SPECTRA } from "./spectra.js";
 
+const VERSION = "1.0.1";
+document.getElementById("version").textContent = VERSION;
+
 initializeApp(firebaseConfig);
 const db = getFirestore();
 
