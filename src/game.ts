@@ -2,8 +2,9 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
+import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -31,7 +32,7 @@ let draftGuess = 50;
 let resetRoundN = 0;
 
 const ref = () => doc(db, "rooms", roomCode!);
-const screens: Record<string, HTMLElement> = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game"), summary: $("screen-summary") };
+const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), summary: $("screen-summary") };
 const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
 const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 
@@ -42,7 +43,34 @@ nickInput.value = localStorage.getItem("wave_nick") || "";
 nickInput.addEventListener("input", () => localStorage.setItem("wave_nick", nickInput.value.trim()));
 const myName = () => nickInput.value.trim() || "Player 1";
 
-async function createRoom() {
+let catListBuilt = false;
+
+function showCatScreen() {
+  show("cats");
+  if (catListBuilt) return;
+  catListBuilt = true;
+  const list = $("cat-list");
+  CATEGORIES.forEach((c) => {
+    const n = SPECTRA_BY_CATEGORY[c].length;
+    const label = document.createElement("label");
+    label.className = "cat-option";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = c;
+    cb.checked = true;
+    label.append(cb, document.createTextNode(`${c} (${n})`));
+    list.append(label);
+  });
+}
+
+$("btn-create").addEventListener("click", showCatScreen);
+$("btn-back-cats").addEventListener("click", () => show("home"));
+$("btn-create-cats").addEventListener("click", () => {
+  const cats = Array.from(document.querySelectorAll<HTMLInputElement>("#cat-list input:checked")).map((i) => i.value);
+  createRoom(cats);
+});
+
+async function createRoom(categories: string[]) {
   if (!nickInput.value.trim()) { nickInput.focus(); return; }
   const code = makeCode();
   try {
@@ -57,6 +85,7 @@ async function createRoom() {
       phase: "lobby",
       score: 0,
       questionsPerRound: 6,
+      categories,
       round: null,
     });
     openRoom(code);
@@ -145,7 +174,7 @@ $("btn-copy").addEventListener("click", async () => {
   catch { prompt("Party code:", roomData.code); }
 });
 
-$("btn-create").addEventListener("click", createRoom);
+$("btn-create").addEventListener("click", showCatScreen);
 ($("join-input") as HTMLInputElement).addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
 $("btn-join").addEventListener("click", joinRoom);
 $("btn-leave").addEventListener("click", leaveRoom);
@@ -204,6 +233,8 @@ function renderLobby() {
     $("lobby-qpr").hidden = false;
     $("lobby-qpr").textContent = `Questions per round: ${qpr}`;
   }
+  const cats = roomData!.categories?.length ? roomData!.categories : null;
+  $("lobby-cats").textContent = cats ? `Spectra: ${cats.join(", ")}` : "Spectra: random (all categories)";
 }
 
 function renderSummary() {

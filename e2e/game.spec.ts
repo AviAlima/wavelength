@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createRoom, joinRoom, deleteRoom, openHome, roomUrl } from "./helpers";
+import { SPECTRA_BY_CATEGORY } from "../src/spectra.js";
 
 function pointsFor(guess: number, target: number): number {
   const d = Math.abs(guess - target);
@@ -143,7 +144,52 @@ test("round summary after N questions, then continue with accumulated score", as
   }
 });
 
+test("host can limit the game to chosen categories; every spectrum is from them", async ({ browser }) => {
+  const ctxHost = await browser.newContext();
+  const ctxGuest = await browser.newContext();
+  const host = await ctxHost.newPage();
+  const guest = await ctxGuest.newPage();
+  const codes: string[] = [];
+
+  try {
+    await openHome(host, "Avi");
+    const code = await createRoom(host, ["Animals"]);
+    codes.push(code);
+    await expect(host.locator("#lobby-cats")).toContainText("Spectra: Animals");
+
+    await openHome(guest, "Babi");
+    await joinRoom(guest, code);
+    await expect(guest.locator("#lobby-cats")).toContainText("Spectra: Animals");
+
+    await host.click("#btn-start");
+    await expect(host.locator("#screen-game")).toBeVisible();
+
+    const animalPairs = SPECTRA_BY_CATEGORY["Animals"].map((p) => [p.left, p.right].join("|"));
+    for (let q = 0; q < 3; q++) {
+      const room = (await (await fetch(roomUrl(code))).json()).fields;
+      const left = room.round.mapValue.fields.left.stringValue;
+      const right = room.round.mapValue.fields.right.stringValue;
+      expect(animalPairs).toContain(`${left}|${right}`);
+
+      const hostIsGiver = await host.locator("#giver-panel").isVisible();
+      const giver = hostIsGiver ? host : guest;
+      const guesser = hostIsGiver ? guest : host;
+      await giver.fill("#clue-input", `clue ${q}`);
+      await giver.click("#btn-send");
+      await guesser.locator("#dial-bar").click({ position: { x: 350, y: 27 } });
+      await guesser.click("#btn-lock");
+      await expect(host.locator("#reveal-panel")).toBeVisible();
+      await host.click("#btn-next");
+      await expect(host.locator("#round-num")).toHaveText(String(q + 2));
+    }
+  } finally {
+    for (const c of codes) await deleteRoom(c);
+    await ctxHost.close();
+    await ctxGuest.close();
+  }
+});
+
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.3.0");
+  await expect(page.locator("#version")).toHaveText("1.4.0");
 });

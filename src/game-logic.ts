@@ -1,6 +1,5 @@
 import { runTransaction, type Firestore, type DocumentReference } from "firebase/firestore";
 import { SPECTRA } from "./spectra.js";
-
 export type RoomPhase = "lobby" | "clue" | "guess" | "reveal" | "summary";
 
 export interface Player {
@@ -30,6 +29,7 @@ export interface RoomData {
   questionsPerRound?: number;
   roundScore?: number;
   usedSpectra?: number[];
+  categories?: string[];
 }
 
 export const DEFAULT_QUESTIONS_PER_ROUND = 6;
@@ -43,11 +43,17 @@ export const pointsFor = (target: number, guess: number): number => {
   return 0;
 };
 
-export const pickSpectrumIndex = (used: number[]): { idx: number; used: number[] } => {
-  const all = SPECTRA.map((_, i) => i);
-  const available = all.filter((i) => !used.includes(i));
-  const pool = available.length ? available : all;
-  const idx = pool[Math.floor(Math.random() * pool.length)];
+export const poolFor = (categories: string[] | undefined): number[] => {
+  if (categories?.length) {
+    return SPECTRA.flatMap((p, i) => (categories.includes(p.category) ? [i] : []));
+  }
+  return SPECTRA.map((_, i) => i);
+};
+
+export const pickSpectrumIndex = (used: number[], pool: number[]): { idx: number; used: number[] } => {
+  const available = pool.filter((i) => !used.includes(i));
+  const draw = available.length ? available : pool;
+  const idx = draw[Math.floor(Math.random() * draw.length)];
   return { idx, used: [...used.filter((i) => i !== idx), idx] };
 };
 
@@ -57,8 +63,8 @@ export const makeRound = (n: number, giver: string, guesser: string, spectrumIdx
     n,
     giver,
     guesser,
-    left: sp[0],
-    right: sp[1],
+    left: sp.left,
+    right: sp.right,
     target: 3 + Math.floor(Math.random() * 94),
     clue: "",
     guess: null,
@@ -74,7 +80,7 @@ export const startGameTransaction = async (db: Firestore, roomRef: DocumentRefer
     if (pids.length < 2) return null;
     const giver = pids[Math.floor(Math.random() * pids.length)];
     const guesser = pids.find((p) => p !== giver)!;
-    const pick = pickSpectrumIndex([]);
+    const pick = pickSpectrumIndex([], poolFor(data.categories));
     const round = makeRound(1, giver, guesser, pick.idx);
     tx.update(roomRef, { phase: "clue", round, roundScore: 0, usedSpectra: pick.used });
     return round;
@@ -100,7 +106,7 @@ export const nextRoundTransaction = async (
       tx.update(roomRef, { score, roundScore, phase: "summary" });
       return { points: pts, round: r, ended: true };
     }
-    const pick = pickSpectrumIndex(data.usedSpectra ?? []);
+    const pick = pickSpectrumIndex(data.usedSpectra ?? [], poolFor(data.categories));
     const round = makeRound(r.n + 1, r.guesser, r.giver, pick.idx);
     tx.update(roomRef, { score, roundScore, usedSpectra: pick.used, phase: "clue", round });
     return { points: pts, round, ended: false };
@@ -118,7 +124,7 @@ export const continueTransaction = async (
     if (!snap.exists() || !data || data.phase !== "summary") return null;
     const r = data.round;
     if (!r || r.n !== expectedN) return null;
-    const pick = pickSpectrumIndex(data.usedSpectra ?? []);
+    const pick = pickSpectrumIndex(data.usedSpectra ?? [], poolFor(data.categories));
     const round = makeRound(r.n + 1, r.guesser, r.giver, pick.idx);
     tx.update(roomRef, { roundScore: 0, usedSpectra: pick.used, phase: "clue", round });
     return round;

@@ -36,6 +36,16 @@
     </div>
   </section>
 
+  <section id="screen-cats" class="screen" hidden>
+    <div class="card">
+      <h2>Choose categories</h2>
+      <p class="hint small-hint">Pick which spectra to play with. Nothing selected = random from everything.</p>
+      <div id="cat-list"></div>
+      <button id="btn-create-cats" class="btn primary">Create party</button>
+      <button id="btn-back-cats" class="btn ghost">Back</button>
+    </div>
+  </section>
+
   <section id="screen-lobby" class="screen" hidden>
     <div class="card">
       <div class="code-row">
@@ -50,6 +60,7 @@
         <input id="qpr-input" type="number" min="1" max="20" value="6" inputmode="numeric">
       </label>
       <p id="lobby-qpr" class="hint" hidden></p>
+      <p id="lobby-cats" class="hint"></p>
       <p id="lobby-note" class="hint" hidden>Waiting for the host to start the game…</p>
       <button id="btn-start" class="btn primary" hidden disabled>Start game (waiting…)</button>
       <p class="hint small-hint">Clue givers alternate every question. Guess within 6 of the target = 4 pts, 12 = 3, 20 = 2, 30 = 1.</p>

@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { firebaseConfig } from "../src/firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, pickSpectrumIndex, type RoomData } from "../src/game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, pickSpectrumIndex, poolFor, type RoomData } from "../src/game-logic.js";
 import { SPECTRA } from "../src/spectra.js";
 
 const appA = initializeApp(firebaseConfig, "simA");
@@ -145,17 +145,34 @@ async function main() {
 
   console.log("--- test: spectra do not repeat within a game ---");
   {
+  const allPool = poolFor(undefined);
   let used: number[] = [];
   const seen: number[] = [];
   for (let i = 0; i < SPECTRA.length; i++) {
-    const pick = pickSpectrumIndex(used);
+    const pick = pickSpectrumIndex(used, allPool);
     assert(!used.includes(pick.idx), `spectrum ${i + 1} is fresh (no repeat)`);
     seen.push(pick.idx);
     used = pick.used;
   }
   assert(new Set(seen).size === SPECTRA.length, "all spectra used exactly once before any repeat");
-  const re = pickSpectrumIndex(used);
+  const re = pickSpectrumIndex(used, allPool);
   assert(used.includes(re.idx) || seen.includes(re.idx), "after exhaustion the pool resets");
+}
+
+  console.log("--- test: category pool limits spectra and never repeats within it ---");
+  {
+  const pool = poolFor(["Animals"]);
+  assert(pool.length === SPECTRA.filter((p) => p.category === "Animals").length, "pool matches the category size");
+  assert(pool.every((i) => SPECTRA[i].category === "Animals"), "every pool index is from the chosen category");
+  let used: number[] = [];
+  const seen: number[] = [];
+  for (let i = 0; i < pool.length; i++) {
+    const pick = pickSpectrumIndex(used, pool);
+    assert(!used.includes(pick.idx), `category spectrum ${i + 1} is fresh (no repeat)`);
+    seen.push(pick.idx);
+    used = pick.used;
+  }
+  assert(new Set(seen).size === pool.length, "every category spectrum used exactly once before any repeat");
 }
 
   console.log(`\nAll ${passed} assertions passed.`);  for (const c of cleanup) {
