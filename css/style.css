@@ -145,6 +145,17 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 }
 .score-chip b { color: var(--text); font-size: 18px; }
 
+.sync-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  margin-left: 8px;
+  transition: background .3s;
+}
+.sync-dot.warn { background: var(--accent2); }
+
 .round-info { color: var(--muted); margin: 0 0 8px; font-size: 14px; }
 #round-num { color: var(--accent); font-weight: 700; }
 

@@ -1,13 +1,13 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
+import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 document.getElementById("version")!.textContent = VERSION;
 
-initializeApp(firebaseConfig);
-const db = getFirestore();
+const app = initializeApp(firebaseConfig);
+const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
@@ -88,12 +88,17 @@ async function joinRoom() {
 function openRoom(code: string) {
   roomCode = code;
   if (unsub) unsub();
-  unsub = onSnapshot(doc(db, "rooms", code), (snap) => {
+  unsub = onSnapshot(doc(db, "rooms", code), { includeMetadataChanges: true }, (snap) => {
     if (!snap.exists()) return;
     roomData = snap.data() as RoomData;
+    setSync(!!(snap.metadata.hasPendingWrites || snap.metadata.fromCache));
     render();
   });
 }
+
+const setSync = (warn: boolean) => {
+  $("sync-dot").classList.toggle("warn", warn);
+};
 
 function leaveRoom() {
   if (roomCode && roomData) {
