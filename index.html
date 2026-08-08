@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wavelength</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
+<script type="importmap">
+{
+  "imports": {
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+
+  <section id="screen-home" class="screen">
+    <div class="card">
+      <h1 class="logo">Wavelength</h1>
+      <p class="tagline">2 players. 1 spectrum. How well do you sync?</p>
+      <label class="field">
+        <span>Nickname</span>
+        <input id="nick-input" placeholder="Your name" maxlength="20" autocomplete="off">
+      </label>
+      <button id="btn-create" class="btn primary">Create a party</button>
+      <div class="divider"><span>or</span></div>
+      <label class="field">
+        <span>Join with code</span>
+        <input id="join-input" placeholder="ABCDE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      </label>
+      <button id="btn-join" class="btn">Join party</button>
+    </div>
+  </section>
+
+  <section id="screen-lobby" class="screen" hidden>
+    <div class="card">
+      <div class="code-chip">Party code <b id="lobby-code"></b></div>
+      <h2>Players</h2>
+      <div id="lobby-players"></div>
+      <p id="lobby-waiting" class="hint">Waiting for a second player…<br>Share the code above.</p>
+      <p id="lobby-note" class="hint" hidden>Waiting for the host to start…</p>
+      <button id="btn-start" class="btn primary" hidden>Start game</button>
+      <p class="hint small-hint">Clue givers alternate every round. Guess within 10 of the target = 4 pts, 20 = 3, 30 = 2, 40 = 1.</p>
+      <button id="btn-leave" class="btn ghost">Leave party</button>
+    </div>
+  </section>
+
+  <section id="screen-game" class="screen" hidden>
+    <header class="game-header">
+      <div class="code-chip small">#<span id="game-code"></span></div>
+      <div class="score-chip">Score <b id="score">0</b></div>
+    </header>
+    <div class="card game-card">
+      <p class="round-info">Round <span id="round-num">1</span> • <span id="round-info"></span></p>
+      <div id="clue-box" class="clue-box" hidden>“<span id="clue-text"></span>”</div>
+
+      <div class="spectrum">
+        <div class="spec-labels"><span id="spec-left"></span><span id="spec-right"></span></div>
+        <div class="dial">
+          <div id="dial-bar" class="dial-bar">
+            <div id="target-marker" class="marker target" hidden></div>
+            <div id="guess-arrow" class="marker arrow" style="left:50%" hidden></div>
+            <div id="reveal-guess" class="marker arrow reveal" hidden></div>
+            <div id="reveal-target" class="marker target reveal" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="giver-panel">
+        <div id="clue-input-wrap">
+          <p class="hint"><span id="target-badge" class="badge"></span> Give a clue that lands your teammate near the target:</p>
+          <label class="field">
+            <input id="clue-input" placeholder="e.g. “Sunday morning”" maxlength="60" autocomplete="off">
+          </label>
+          <button id="btn-send" class="btn primary">Send clue</button>
+        </div>
+        <p id="giver-wait" class="hint" hidden>Waiting for your teammate's guess…</p>
+      </div>
+
+      <div id="guess-panel">
+        <p id="guess-wait" class="hint">Waiting for a clue…</p>
+        <div id="guess-dial" hidden>
+          <p class="hint">Drag the arrow to where the target is: <b id="guess-value">50</b></p>
+          <button id="btn-lock" class="btn primary">Lock guess</button>
+        </div>
+      </div>
+
+      <div id="reveal-panel" hidden>
+        <p class="hint">Clue: “<b id="reveal-clue"></b>”</p>
+        <p class="hint" id="reveal-delta"></p>
+        <p class="points" id="reveal-points"></p>
+        <button id="btn-next" class="btn primary">Next round</button>
+      </div>
+
+      <button id="btn-leave-game" class="btn ghost">Leave party</button>
+    </div>
+  </section>
+
+</div>
+<script type="module" src="js/game.js"></script>
+</body>
+</html>
