@@ -62,6 +62,41 @@ test("duplicated tab from home joins as a second player (the shared-identity bug
   }
 });
 
+test("name is required for both joining and creating", async ({ browser }) => {
+  const ctxHost = await browser.newContext();
+  const ctxGuest = await browser.newContext();
+  const host = await ctxHost.newPage();
+  const guest = await ctxGuest.newPage();
+  const codes: string[] = [];
+
+  try {
+    await openHome(host, "Avi");
+    const code = await createRoom(host);
+    codes.push(code);
+
+    await guest.goto("/");
+    await guest.click("#btn-create");
+    await expect(guest.locator("#nick-error")).toBeVisible();
+    await expect(guest.locator("#screen-cats")).toBeHidden();
+    await expect(guest.locator("#nick-input")).toBeFocused();
+
+    await guest.fill("#join-input", code);
+    await guest.click("#btn-join");
+    await expect(guest.locator("#nick-error")).toBeVisible();
+    await expect(guest.locator("#screen-lobby")).toBeHidden();
+
+    await guest.fill("#nick-input", "Babi");
+    await expect(guest.locator("#nick-error")).toBeHidden();
+    await guest.click("#btn-join");
+    await expect(guest.locator("#screen-lobby")).toBeVisible();
+    await expect(guest.locator(".player-row").filter({ hasText: "Babi (you)" })).toHaveCount(1);
+  } finally {
+    for (const c of codes) await deleteRoom(c);
+    await ctxHost.close();
+    await ctxGuest.close();
+  }
+});
+
 test("reload keeps identity and does not duplicate the player", async ({ browser }) => {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();

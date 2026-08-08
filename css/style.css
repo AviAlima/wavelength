@@ -258,3 +258,9 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 }
 .cat-option input { width: 18px; height: 18px; accent-color: #0ea5e9; cursor: pointer; }
 #cat-list { margin: 8px 0 18px; max-height: 50vh; overflow-y: auto; }
+
+.optional { font-style: normal; color: var(--muted); font-weight: 400; font-size: 12px; }
+
+.required { font-style: normal; font-weight: 700; color: #f87171; font-size: 12px; }
+.error-text { color: #f87171; font-size: 13px; margin: -8px 0 10px; }
+input.input-error { border-color: #f87171; }

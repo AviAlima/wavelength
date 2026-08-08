@@ -4,7 +4,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.2";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -40,12 +40,32 @@ const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 
 const nickInput = $("nick-input") as HTMLInputElement;
 nickInput.value = localStorage.getItem("wave_nick") || "";
-nickInput.addEventListener("input", () => localStorage.setItem("wave_nick", nickInput.value.trim()));
-const myName = () => nickInput.value.trim() || "Player 1";
+nickInput.addEventListener("input", () => {
+  localStorage.setItem("wave_nick", nickInput.value.trim());
+  if (nickInput.value.trim()) {
+    $("nick-error").hidden = true;
+    nickInput.classList.remove("input-error");
+  }
+});
+
+const requireName = (): boolean => {
+  if (nickInput.value.trim()) {
+    $("nick-error").hidden = true;
+    nickInput.classList.remove("input-error");
+    return true;
+  }
+  $("nick-error").hidden = false;
+  nickInput.classList.add("input-error");
+  nickInput.focus();
+  return false;
+};
+
+const myName = () => nickInput.value.trim();
 
 let catListBuilt = false;
 
 function showCatScreen() {
+  if (!requireName()) return;
   show("cats");
   if (catListBuilt) return;
   catListBuilt = true;
@@ -71,7 +91,7 @@ $("btn-create-cats").addEventListener("click", () => {
 });
 
 async function createRoom(categories: string[]) {
-  if (!nickInput.value.trim()) { nickInput.focus(); return; }
+  if (!requireName()) return;
   const code = makeCode();
   try {
     const id = freshId();
@@ -95,6 +115,7 @@ async function createRoom(categories: string[]) {
 }
 
 async function joinRoom() {
+  if (!requireName()) return;
   const code = ($("join-input") as HTMLInputElement).value.trim().toUpperCase();
   if (!code) return;
   try {

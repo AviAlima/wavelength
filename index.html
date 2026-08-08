@@ -23,9 +23,10 @@
       <h1 class="logo">Wavelength</h1>
       <p class="tagline">2 players. 1 spectrum. How well do you sync?</p>
       <label class="field">
-        <span>Nickname</span>
-        <input id="nick-input" placeholder="Your name" maxlength="20" autocomplete="off">
+        <span>Your name <em class="required">required</em></span>
+        <input id="nick-input" placeholder="The name your friends will see" maxlength="20" autocomplete="off">
       </label>
+      <p id="nick-error" class="error-text" hidden>Enter your name first.</p>
       <button id="btn-create" class="btn primary">Create a party</button>
       <div class="divider"><span>or</span></div>
       <label class="field">
