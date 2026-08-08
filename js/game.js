@@ -53,7 +53,6 @@ async function createRoom() {
     await setDoc(doc(db, "rooms", code), {
       code,
       createdAt: serverTimestamp(),
-      host: myId,
       players: { [myId]: { id: myId, name: myName(), color: COLORS[0] } },
       phase: "lobby",
       score: 0,
@@ -72,12 +71,19 @@ async function joinRoom() {
     const snap = await getDoc(doc(db, "rooms", code));
     if (!snap.exists()) { alert("Room not found"); return; }
     const data = snap.data();
-    if (data.phase !== "lobby" || Object.keys(data.players).length >= 2) {
-      alert("Room is full or the game already started");
+    const pids = Object.keys(data.players);
+    if (data.phase !== "lobby") {
+      if (pids.includes(myId)) { openRoom(code); return; }
+      alert("The game already started");
       return;
     }
+    if (pids.includes(myId)) {
+      openRoom(code);
+      return;
+    }
+    if (pids.length >= 2) { alert("Room is full"); return; }
     await updateDoc(doc(db, "rooms", code), {
-      [`players.${myId}`]: { id: myId, name: myName(), color: COLORS[Object.keys(data.players).length] },
+      [`players.${myId}`]: { id: myId, name: myName(), color: COLORS[pids.length] },
     });
     openRoom(code);
   } catch (err) { alert("Could not join: " + err.message); }
@@ -130,10 +136,8 @@ function renderLobby() {
     list.append(row);
   });
   const n = Object.keys(roomData.players).length;
-  const isHost = roomData.host === myId;
   $("lobby-waiting").hidden = n === 2;
-  $("lobby-start").hidden = !isHost || n < 2;
-  $("lobby-note").hidden = isHost || n >= 2;
+  $("lobby-start").hidden = n < 2;
 }
 
 /* ---------- game ---------- */
