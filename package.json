@@ -3,9 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sim": "node sim/sim.js"
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/game.ts --bundle --format=esm --external:firebase/* --outfile=dist/js/game.js && cp index.html dist/index.html && cp -r css dist/css",
+    "sim": "esbuild sim/sim.ts --bundle --format=cjs --platform=node --outfile=sim/sim.bundle.cjs && node sim/sim.bundle.cjs"
   },
   "dependencies": {
     "firebase": "10.12.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
   }
 }

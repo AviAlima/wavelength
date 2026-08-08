@@ -1,1 +1,3 @@
 node_modules/
+dist/
+sim/sim.bundle.cjs

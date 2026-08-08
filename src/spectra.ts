@@ -1,4 +1,4 @@
-export const SPECTRA = [
+export const SPECTRA: Array<[string, string]> = [
   ["Hot", "Cold"],
   ["Cheap", "Expensive"],
   ["Simple", "Complex"],

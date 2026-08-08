@@ -1,15 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
-import { firebaseConfig } from "./firebase-config.mjs";
-import { pointsFor, startGameTransaction, nextRoundTransaction } from "./game-logic.mjs";
+import { firebaseConfig } from "./firebase-config.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.0.6";
-document.getElementById("version").textContent = VERSION;
+const VERSION = "1.1.0";
+document.getElementById("version")!.textContent = VERSION;
 
 initializeApp(firebaseConfig);
 const db = getFirestore();
 
-const $ = (id) => document.getElementById(id);
+const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const makeCode = () => {
@@ -21,22 +21,23 @@ const makeCode = () => {
 
 const COLORS = ["#38bdf8", "#f472b6", "#a78bfa", "#fbbf24", "#34d399", "#fb7185"];
 
-let myId = localStorage.getItem("wave_id");
-if (!myId) { myId = uid(); localStorage.setItem("wave_id", myId); }
+const storedId = localStorage.getItem("wave_id");
+const myId: string = storedId || uid();
+localStorage.setItem("wave_id", myId);
 
-let roomCode = null;
-let roomData = null;
-let unsub = null;
+let roomCode: string | null = null;
+let roomData: RoomData | null = null;
+let unsub: (() => void) | null = null;
 let draftGuess = 50;
 
-const ref = () => doc(db, "rooms", roomCode);
-const screens = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game") };
-const show = (name) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
-const setPos = (el, val) => { el.style.left = `${val}%`; };
+const ref = () => doc(db, "rooms", roomCode!);
+const screens: Record<string, HTMLElement> = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game") };
+const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
+const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 
 /* ---------- home ---------- */
 
-const nickInput = $("nick-input");
+const nickInput = $("nick-input") as HTMLInputElement;
 nickInput.value = localStorage.getItem("wave_nick") || "";
 nickInput.addEventListener("input", () => localStorage.setItem("wave_nick", nickInput.value.trim()));
 const myName = () => nickInput.value.trim() || "Player 1";
@@ -55,17 +56,17 @@ async function createRoom() {
     });
     openRoom(code);
   } catch (err) {
-    alert("Could not create room. Did you paste your Firebase config in js/firebase-config.js? " + err.message);
+    alert("Could not create room. Did you paste your Firebase config in src/firebase-config.ts? " + (err as Error).message);
   }
 }
 
 async function joinRoom() {
-  const code = $("join-input").value.trim().toUpperCase();
+  const code = ($("join-input") as HTMLInputElement).value.trim().toUpperCase();
   if (!code) return;
   try {
     const snap = await getDoc(doc(db, "rooms", code));
     if (!snap.exists()) { alert("Room not found"); return; }
-    const data = snap.data();
+    const data = snap.data() as RoomData;
     const pids = Object.keys(data.players);
     if (data.phase !== "lobby") {
       if (pids.includes(myId)) { openRoom(code); return; }
@@ -81,15 +82,15 @@ async function joinRoom() {
       [`players.${myId}`]: { id: myId, name: myName(), color: COLORS[pids.length] },
     });
     openRoom(code);
-  } catch (err) { alert("Could not join: " + err.message); }
+  } catch (err) { alert("Could not join: " + (err as Error).message); }
 }
 
-function openRoom(code) {
+function openRoom(code: string) {
   roomCode = code;
   if (unsub) unsub();
   unsub = onSnapshot(doc(db, "rooms", code), (snap) => {
     if (!snap.exists()) return;
-    roomData = snap.data();
+    roomData = snap.data() as RoomData;
     render();
   });
 }
@@ -114,7 +115,7 @@ $("btn-copy").addEventListener("click", async () => {
 });
 
 $("btn-create").addEventListener("click", createRoom);
-$("join-input").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
+($("join-input") as HTMLInputElement).addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
 $("btn-join").addEventListener("click", joinRoom);
 $("btn-leave").addEventListener("click", leaveRoom);
 $("btn-leave-game").addEventListener("click", leaveRoom);
@@ -129,10 +130,10 @@ function render() {
 
 function renderLobby() {
   show("lobby");
-  $("lobby-code").textContent = roomData.code;
+  $("lobby-code").textContent = roomData!.code;
   const list = $("lobby-players");
   list.innerHTML = "";
-  Object.values(roomData.players).forEach((p) => {
+  Object.values(roomData!.players).forEach((p) => {
     const row = document.createElement("div");
     row.className = "player-row";
     const dot = document.createElement("span");
@@ -141,9 +142,8 @@ function renderLobby() {
     row.append(dot, document.createTextNode(`${p.name}${p.id === myId ? " (you)" : ""}`));
     list.append(row);
   });
-  const pList = Object.values(roomData.players || {});
-  const n = pList.length;
-  const start = $("btn-start");
+  const n = Object.values(roomData!.players).length;
+  const start = $("btn-start") as HTMLButtonElement;
   start.hidden = false;
   start.disabled = n < 2;
   start.textContent = n < 2 ? `Start game (${n}/2 players)` : "Start game";
@@ -155,23 +155,23 @@ function renderLobby() {
 $("btn-start").addEventListener("click", async () => {
   try {
     await startGameTransaction(db, ref());
-  } catch (err) { alert("Failed to start: " + err.message); }
+  } catch (err) { alert("Failed to start: " + (err as Error).message); }
 });
 
 function renderGame() {
   show("game");
-  const r = roomData.round;
+  const r = roomData!.round;
   if (!r) return;
   const isGiver = r.giver === myId;
   const isGuesser = r.guesser === myId;
-  const cluePhase = roomData.phase === "clue";
-  const guessPhase = roomData.phase === "guess";
-  const revealPhase = roomData.phase === "reveal";
+  const cluePhase = roomData!.phase === "clue";
+  const guessPhase = roomData!.phase === "guess";
+  const revealPhase = roomData!.phase === "reveal";
 
-  $("game-code").textContent = roomData.code;
-  $("score").textContent = roomData.score;
-  $("round-num").textContent = r.n;
-  $("round-info").textContent = `${roomData.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
+  $("game-code").textContent = roomData!.code;
+  $("score").textContent = String(roomData!.score);
+  $("round-num").textContent = String(r.n);
+  $("round-info").textContent = `${roomData!.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
   $("spec-left").textContent = r.left;
   $("spec-right").textContent = r.right;
 
@@ -187,11 +187,11 @@ function renderGame() {
   $("guess-arrow").hidden = !(isGuesser && guessPhase);
   if (isGuesser && guessPhase) {
     setPos($("guess-arrow"), draftGuess);
-    $("guess-value").textContent = Math.round(draftGuess);
+    $("guess-value").textContent = String(Math.round(draftGuess));
   }
   $("reveal-guess").hidden = !revealPhase;
   $("reveal-target").hidden = !revealPhase;
-  if (revealPhase) {
+  if (revealPhase && r.guess != null) {
     setPos($("reveal-guess"), r.guess);
     setPos($("reveal-target"), r.target);
     $("reveal-clue").textContent = r.clue;
@@ -215,40 +215,40 @@ function renderGame() {
 }
 
 $("btn-send").addEventListener("click", async () => {
-  const clue = $("clue-input").value.trim();
+  const clue = ($("clue-input") as HTMLInputElement).value.trim();
   if (!clue) return;
   try {
     await updateDoc(ref(), { phase: "guess", "round.clue": clue });
-    $("clue-input").value = "";
-  } catch (err) { alert("Failed: " + err.message); }
+    ($("clue-input") as HTMLInputElement).value = "";
+  } catch (err) { alert("Failed: " + (err as Error).message); }
 });
 
 $("btn-lock").addEventListener("click", async () => {
   try {
     await updateDoc(ref(), { phase: "reveal", "round.guess": Math.round(draftGuess) });
-  } catch (err) { alert("Failed: " + err.message); }
+  } catch (err) { alert("Failed: " + (err as Error).message); }
 });
 
 $("btn-next").addEventListener("click", async () => {
-  const n = roomData.round?.n;
+  const n = roomData?.round?.n;
   if (!n) return;
   try {
     await nextRoundTransaction(db, ref(), n);
-  } catch (err) { alert("Failed: " + err.message); }
+  } catch (err) { alert("Failed: " + (err as Error).message); }
 });
 
 /* ---------- dial ---------- */
 
 const dialBar = $("dial-bar");
 let dragging = false;
-const move = (e) => {
-  if (!roomData || roomData.phase !== "guess" || roomData.round.guesser !== myId) return;
+const move = (e: PointerEvent) => {
+  if (!roomData || roomData.phase !== "guess" || roomData.round?.guesser !== myId) return;
   const rect = dialBar.getBoundingClientRect();
   let x = e.clientX - rect.left;
   x = Math.max(0, Math.min(rect.width, x));
   draftGuess = (x / rect.width) * 100;
   setPos($("guess-arrow"), draftGuess);
-  $("guess-value").textContent = Math.round(draftGuess);
+  $("guess-value").textContent = String(Math.round(draftGuess));
 };
 dialBar.addEventListener("pointerdown", (e) => {
   dragging = true;
