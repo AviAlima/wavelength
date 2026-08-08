@@ -30,10 +30,10 @@ export interface RoomData {
 
 export const pointsFor = (target: number, guess: number): number => {
   const d = Math.abs(target - guess);
-  if (d < 10) return 4;
-  if (d < 20) return 3;
-  if (d < 30) return 2;
-  if (d < 40) return 1;
+  if (d < 6) return 4;
+  if (d < 12) return 3;
+  if (d < 20) return 2;
+  if (d < 30) return 1;
   return 0;
 };
 

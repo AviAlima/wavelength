@@ -3,7 +3,7 @@ import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, onSn
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, type RoomData } from "./game-logic.js";
 
-const VERSION = "1.1.1";
+const VERSION = "1.1.2";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -29,6 +29,7 @@ let roomCode: string | null = null;
 let roomData: RoomData | null = null;
 let unsub: (() => void) | null = null;
 let draftGuess = 50;
+let resetRoundN = 0;
 
 const ref = () => doc(db, "rooms", roomCode!);
 const screens: Record<string, HTMLElement> = { home: $("screen-home"), lobby: $("screen-lobby"), game: $("screen-game") };
@@ -191,6 +192,10 @@ function renderGame() {
   }
   $("guess-arrow").hidden = !(isGuesser && guessPhase);
   if (isGuesser && guessPhase) {
+    if (r.n !== resetRoundN) {
+      draftGuess = 50;
+      resetRoundN = r.n;
+    }
     setPos($("guess-arrow"), draftGuess);
     $("guess-value").textContent = String(Math.round(draftGuess));
   }
