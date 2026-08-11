@@ -33,6 +33,7 @@ export interface RoomData {
   collective?: boolean;
   setup?: SetupState;
   group?: number;
+  revealedAt?: number;
 }
 
 export interface SetupItem {
@@ -53,6 +54,7 @@ export interface PlayerSetup {
 export interface SetupState {
   q: Record<string, SetupItem>;
   byPlayer: Record<string, PlayerSetup>;
+  turn: string;
   startedAt: number;
 }
 
@@ -62,6 +64,7 @@ export const setupQList = (q: SetupState["q"]): SetupItem[] =>
 const freshSetup = (q: SetupItem[], pids: string[]): SetupState => ({
   q: Object.fromEntries(q.map((it, i) => [String(i), it])),
   byPlayer: Object.fromEntries(pids.map((pid) => [pid, { skips: MAX_SKIPS, total: q.filter((it) => it.by === pid).length }])),
+  turn: "",
   startedAt: Date.now(),
 });
 
@@ -146,7 +149,7 @@ export const startCollectiveTransaction = async (db: Firestore, roomRef: Documen
     const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
     const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
     const setup = freshSetup(deal.q, pids);
-    tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
+    tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1, revealedAt: 0 });
     return deal.q.length;
   });
 };
@@ -191,19 +194,47 @@ export const setupDoneTransaction = async (
     const data = snap.data() as RoomData | undefined;
     if (!snap.exists() || !data || data.phase !== "setup" || !data.setup) return false;
     if (!allCluesDone(data)) return false;
-    tx.update(roomRef, { phase: "guess" });
+    const pids = Object.keys(data.players);
+    const first = (data.group ?? 1) % 2 === 1 ? data.host : pids.find((p) => p !== data.host)!;
+    tx.update(roomRef, { phase: "guess", "setup.turn": first });
     return true;
   });
 };
 
-export const guessDoneTransaction = async (
+export const guessTurnTransaction = async (
+  db: Firestore,
+  roomRef: DocumentReference,
+): Promise<boolean> => {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef);
+    const data = snap.data() as RoomData | undefined;
+    if (!snap.exists() || !data || data.phase !== "guess" || !data.setup) return false;
+    const st = data.setup;
+    const pids = Object.keys(data.players);
+    const active = st.turn;
+    if (!pids.includes(active)) return false;
+    const items = setupQList(st.q);
+    const activeDone = items.filter((it) => it.by !== active).every((it) => it.answer != null);
+    if (!activeDone) return false;
+    const partner = pids.find((p) => p !== active)!;
+    const partnerDone = items.filter((it) => it.by === active).every((it) => it.answer != null);
+    if (partnerDone) {
+      tx.update(roomRef, { phase: "reveal", revealedAt: Date.now() });
+    } else {
+      tx.update(roomRef, { "setup.turn": partner });
+    }
+    return true;
+  });
+};
+
+export const revealDoneTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
 ): Promise<number | null> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
-    if (!snap.exists() || !data || data.phase !== "guess" || !data.setup) return null;
+    if (!snap.exists() || !data || data.phase !== "reveal" || !data.setup) return null;
     if (!allGuessesDone(data)) return null;
     const items = setupQList(data.setup.q);
     const pts = items.reduce((sum, it) => sum + pointsFor(it.target, it.answer ?? 50), 0);
@@ -254,7 +285,7 @@ export const continueTransaction = async (
       const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
       const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
       const setup = freshSetup(deal.q, pids);
-      tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
+      tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1, revealedAt: 0 });
       return null;
     }
     if (!r || r.n !== expectedN) return null;

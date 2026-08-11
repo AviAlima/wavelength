@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createRoom, joinRoom, deleteRoom, openHome, roomUrl } from "./helpers";
 
 const num = (v: Record<string, string> | undefined): number =>
@@ -13,19 +13,19 @@ function pointsFor(target: number, guess: number): number {
   return 0;
 }
 
-async function sendClue(page: import("@playwright/test").Page, cardIdx: number, clue: string) {
-  const card = page.locator("#collect-list .q-card").nth(cardIdx);
+async function sendClue(page: Page, clue: string) {
+  const card = page.locator("#collect-list .q-card").first();
   await card.locator("input").fill(clue);
   await card.locator("button.btn.primary").click();
 }
 
-async function lockGuess(page: import("@playwright/test").Page, cardIdx: number, x: number) {
-  const card = page.locator("#collect-list .q-card").nth(cardIdx);
+async function lockGuess(page: Page, x: number) {
+  const card = page.locator("#collect-list .q-card").first();
   await card.locator(".dial-bar").click({ position: { x, y: 27 } });
   await card.locator("button.btn.primary").click();
 }
 
-test("up-front flow: each player sees the fixed target and writes clues, guesses on the partner's targets, then a shared summary reveals all", async ({ browser }) => {
+test("up-front flow: spectra one at a time, turns alternate, review plays back on both screens", async ({ browser }) => {
   const ctxHost = await browser.newContext();
   const ctxGuest = await browser.newContext();
   const host = await ctxHost.newPage();
@@ -47,39 +47,47 @@ test("up-front flow: each player sees the fixed target and writes clues, guesses
     await expect(host.locator("#screen-collect")).toBeVisible();
     await expect(guest.locator("#screen-collect")).toBeVisible();
 
-    await expect(host.locator("#collect-title")).toContainText("write a clue");
-    await expect(host.locator("#collect-progress")).toHaveText("Clues 0 of 2");
-    await expect(guest.locator("#collect-progress")).toHaveText("Clues 0 of 1");
+    // clue stage — one spectrum at a time, secret target marked
+    await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
+    await expect(host.locator("#collect-list .q-card .marker.target")).toHaveCount(1);
+    await expect(host.locator("#collect-list .q-card .badge")).toHaveText(/Target: \d+/);
+    await sendClue(host, "sunny");
+    await expect(host.locator("#collect-progress")).toHaveText("Spectrum 2 of 2 — write a clue");
+    await sendClue(host, "beach");
+    await expect(host.locator("#collect-done")).toContainText(/waiting for Babi/i);
 
-    const hostCards = host.locator("#collect-list .q-card");
-    await expect(hostCards).toHaveCount(2);
-    await expect(host.locator("#collect-list .q-card .marker.target")).toHaveCount(2);
-    await expect(host.locator("#collect-list .q-card .badge").first()).toHaveText(/Target: \d+/);
-    const guestCards = guest.locator("#collect-list .q-card");
-    await expect(guestCards).toHaveCount(1);
-    await expect(guest.locator("#collect-list .q-card .marker.target")).toHaveCount(1);
+    await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
+    await sendClue(guest, "spicy");
 
-    await sendClue(host, 0, "sunny");
-    await sendClue(host, 1, "beach");
-    await sendClue(guest, 0, "spicy");
+    // guessing — host's turn first, guest watches
+    await expect(host.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(host.locator("#collect-progress")).toHaveText("Guessing 1 of 1");
+    await expect(host.locator("#collect-list .q-card .clue-box")).toContainText("spicy");
+    await expect(guest.locator("#waiting-title")).toHaveText("Avi is answering…");
+    await expect(guest.locator(".waiting-dots span")).toHaveCount(3);
 
-    await expect(host.locator("#collect-title")).toHaveText("Guess the targets — use your partner's clues", { timeout: 15000 });
-    await expect(guest.locator("#collect-title")).toHaveText("Guess the targets — use your partner's clues");
+    await lockGuess(host, 350);
 
-    await expect(host.locator("#collect-progress")).toHaveText("Guesses 0 of 1");
-    await expect(guest.locator("#collect-progress")).toHaveText("Guesses 0 of 2");
-    await expect(host.locator("#collect-list .q-card .clue-box").first()).toContainText("spicy");
-    await expect(guest.locator("#collect-list .q-card .clue-box").first()).toContainText("sunny");
+    // guest's turn, host watches
+    await expect(guest.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(guest.locator("#collect-progress")).toHaveText("Guessing 1 of 2");
+    await expect(host.locator("#waiting-title")).toHaveText("Babi is answering…");
+    await lockGuess(guest, 200);
+    await expect(guest.locator("#collect-progress")).toHaveText("Guessing 2 of 2");
+    await lockGuess(guest, 400);
 
-    await lockGuess(host, 0, 350);
-    await lockGuess(guest, 0, 200);
-    await lockGuess(guest, 1, 400);
+    // review — one question at a time, advancing on both screens
+    await expect(host.locator("#collect-title")).toHaveText("Review — how close were you?", { timeout: 15000 });
+    await expect(guest.locator("#collect-title")).toHaveText("Review — how close were you?");
+    await expect(host.locator("#collect-progress")).toHaveText("Review 1 of 3");
+    await expect(host.locator("#collect-progress")).toHaveText("Review 2 of 3", { timeout: 10000 });
+    await expect(guest.locator("#collect-progress")).toHaveText("Review 2 of 3");
+    await expect(host.locator("#collect-progress")).toHaveText("Review 3 of 3", { timeout: 10000 });
 
+    // summary with accumulated score matching the DB
     await expect(host.locator("#screen-summary")).toBeVisible({ timeout: 15000 });
     await expect(guest.locator("#screen-summary")).toBeVisible();
     await expect(host.locator("#summary-round")).toContainText("3 questions played");
-    await expect(host.locator("#summary-playback .q-card")).toHaveCount(3);
-    await expect(host.locator("#summary-playback .q-card .marker.target.reveal")).toHaveCount(3);
 
     const room = (await (await fetch(roomUrl(code))).json()).fields;
     const items = Object.values(room.setup.mapValue.fields.q.mapValue.fields) as Record<string, string>[];
@@ -93,9 +101,8 @@ test("up-front flow: each player sees the fixed target and writes clues, guesses
     await expect(host.locator("#summary-total")).toContainText("Total score: " + expected);
 
     await host.click("#btn-continue");
-    await expect(host.locator("#screen-collect")).toBeVisible();
     await expect(host.locator("#collect-round")).toHaveText("Round 2");
-    await expect(host.locator("#collect-list .q-card")).toHaveCount(2);
+    await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
 
     const room2 = (await (await fetch(roomUrl(code))).json()).fields;
     expect(Number(room2.score.integerValue ?? room2.score.doubleValue)).toBe(expected);
@@ -106,7 +113,7 @@ test("up-front flow: each player sees the fixed target and writes clues, guesses
   }
 });
 
-test("each player can skip two spectra (dots deplete); skipped spectra are dropped", async ({ browser }) => {
+test("each player can skip two spectra; skipped spectra are dropped", async ({ browser }) => {
   const ctxHost = await browser.newContext();
   const ctxGuest = await browser.newContext();
   const host = await ctxHost.newPage();
@@ -126,24 +133,26 @@ test("each player can skip two spectra (dots deplete); skipped spectra are dropp
     await expect(host.locator("#screen-collect")).toBeVisible();
 
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(2);
-    await host.locator("#collect-list .q-card").first().locator("button.btn:not(.primary)").click();
+    await host.locator("#collect-list .q-card button.btn:not(.primary)").click();
+    await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(1);
-    await host.locator("#collect-list .q-card").first().locator("button.btn:not(.primary)").click();
+    await host.locator("#collect-list .q-card button.btn:not(.primary)").click();
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(0);
-    await expect(host.locator("#collect-list .q-card")).toHaveCount(0);
     await expect(host.locator("#collect-progress")).toHaveText("You skipped all of yours");
+    await expect(host.locator("#collect-done")).toContainText(/waiting for Babi/i);
 
-    await sendClue(guest, 0, "sweet");
+    await sendClue(guest, "sweet");
 
-    await expect(host.locator("#collect-title")).toHaveText("Guess the targets — use your partner's clues", { timeout: 15000 });
-    await expect(host.locator("#collect-progress")).toHaveText("Guesses 0 of 1");
-    await expect(guest.locator("#collect-progress")).toHaveText("Nothing to guess on your side");
+    // host's turn: one surviving spectrum; guest skipped all, so no second turn
+    await expect(host.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(host.locator("#collect-progress")).toHaveText("Guessing 1 of 1");
+    await lockGuess(host, 260);
 
-    await lockGuess(host, 0, 260);
+    await expect(host.locator("#collect-title")).toHaveText("Review — how close were you?", { timeout: 15000 });
+    await expect(host.locator("#collect-progress")).toHaveText("Review 1 of 1");
 
     await expect(host.locator("#screen-summary")).toBeVisible({ timeout: 15000 });
     await expect(host.locator("#summary-round")).toContainText("1 questions played");
-    await expect(host.locator("#summary-playback .q-card")).toHaveCount(1);
   } finally {
     for (const c of codes) await deleteRoom(c);
     await ctxHost.close();
