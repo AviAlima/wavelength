@@ -61,6 +61,11 @@
         <input id="qpr-input" type="number" min="1" max="20" value="6" inputmode="numeric">
       </label>
       <p id="lobby-qpr" class="hint" hidden></p>
+      <label class="field toggle-row" id="collective-wrap" hidden>
+        <input type="checkbox" id="collective-toggle" checked>
+        <span>Answer together up front<em class="hint-inline">Both players pre-position their dial for the round's questions like the original game, then the results play back. Off = one question at a time.</em></span>
+      </label>
+      <p id="lobby-collective" class="hint" hidden></p>
       <p id="lobby-cats" class="hint"></p>
       <p id="lobby-note" class="hint" hidden>Waiting for the host to start the game…</p>
       <button id="btn-start" class="btn primary" hidden disabled>Start game (waiting…)</button>
@@ -110,13 +115,42 @@
       </div>
 
       <div id="reveal-panel" hidden>
-        <p class="hint">Clue: “<b id="reveal-clue"></b>”</p>
+        <p class="hint" id="reveal-clue-line">Clue: “<b id="reveal-clue"></b>”</p>
         <p class="hint" id="reveal-delta"></p>
         <p class="points" id="reveal-points"></p>
         <button id="btn-next" class="btn primary">Next round</button>
       </div>
 
       <button id="btn-leave-game" class="btn ghost">Leave party</button>
+    </div>
+  </section>
+
+  <section id="screen-collect" class="screen" hidden>
+    <header class="game-header">
+      <div class="code-chip small">#<span id="collect-code"></span></div>
+      <div class="score-chip">Score <b id="collect-score">0</b></div>
+    </header>
+    <div class="card game-card">
+      <p class="round-info"><span id="collect-round">Round 1</span> • <span id="collect-queue"></span></p>
+      <div id="collect-question">
+        <p class="hint" id="collect-timer"></p>
+        <div class="spectrum">
+          <div class="spec-labels"><span id="collect-spec-left"></span><span id="collect-spec-right"></span></div>
+          <div class="dial">
+            <div id="collect-bar" class="dial-bar">
+              <div id="collect-marker" class="marker arrow" style="left:50%"></div>
+            </div>
+          </div>
+        </div>
+        <p class="hint">Drag the marker to your answer: <b id="collect-value">50</b></p>
+        <div class="collect-actions">
+          <button id="btn-answer" class="btn primary">Answer</button>
+          <button id="btn-skip" class="btn">Skip</button>
+        </div>
+        <p class="hint small-hint"><span id="skip-dots"></span> <span id="skip-text">skips left — skipped questions are dropped from the round</span></p>
+      </div>
+      <p class="hint" id="collect-done" hidden></p>
+      <button id="btn-leave-collect" class="btn ghost">Leave party</button>
     </div>
   </section>
 

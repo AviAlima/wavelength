@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, nextCollectiveTransaction, allSetupDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.4.2";
+const VERSION = "1.6.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -30,9 +30,14 @@ let roomData: RoomData | null = null;
 let unsub: (() => void) | null = null;
 let draftGuess = 50;
 let resetRoundN = 0;
+let draftCollect = 50;
+let collectIdx: string | null = null;
+let setupDoneFired = false;
+let lastSetupStart = 0;
+let collectTimer: ReturnType<typeof setInterval> | null = null;
 
 const ref = () => doc(db, "rooms", roomCode!);
-const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), summary: $("screen-summary") };
+const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), summary: $("screen-summary") };
 const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
 const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 
@@ -105,6 +110,7 @@ async function createRoom(categories: string[]) {
       phase: "lobby",
       score: 0,
       questionsPerRound: 6,
+      collective: true,
       categories,
       round: null,
     });
@@ -155,6 +161,10 @@ function openRoom(code: string) {
     roomData = snap.data() as RoomData;
     setSync(!!(snap.metadata.hasPendingWrites || snap.metadata.fromCache));
     render();
+    if (roomData && roomData.setup && roomData.setup.startedAt !== lastSetupStart) {
+      lastSetupStart = roomData.setup.startedAt;
+      setupDoneFired = false;
+    }
   });
 }
 
@@ -186,6 +196,11 @@ async function leaveRoom() {
   roomCode = null;
   roomData = null;
   unsub = null;
+  draftCollect = 50;
+  collectIdx = null;
+  setupDoneFired = false;
+  lastSetupStart = 0;
+  if (collectTimer) { clearInterval(collectTimer); collectTimer = null; }
   show("home");
 }
 
@@ -212,13 +227,29 @@ $("btn-end").addEventListener("click", leaveRoom);
   try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert("Failed: " + (e as Error).message); }
 });
 
+($("collective-toggle") as HTMLInputElement).addEventListener("change", async () => {
+  if (!roomCode) return;
+  const v = ($("collective-toggle") as HTMLInputElement).checked;
+  try { await updateDoc(ref(), { collective: v }); } catch (e) { alert("Failed: " + (e as Error).message); }
+});
+
 /* ---------- render ---------- */
 
 function render() {
   if (!roomData) return;
   if (roomData.phase === "lobby") renderLobby();
+  else if (roomData.phase === "setup") renderCollect();
   else if (roomData.phase === "summary") renderSummary();
   else renderGame();
+  if (roomData.phase === "setup" && allSetupDone(roomData) && !setupDoneFired) {
+    setupDoneFired = true;
+    setTimeout(() => {
+      if (roomData?.phase !== "setup") { setupDoneFired = false; return; }
+      setupDoneTransaction(db, ref()).then((round) => {
+        if (!round) setupDoneFired = false;
+      }).catch((err) => { setupDoneFired = false; alert("Failed to start the reveal: " + (err as Error).message); });
+    }, 1500);
+  }
 }
 
 function renderLobby() {
@@ -237,6 +268,7 @@ function renderLobby() {
   });
   const n = Object.values(roomData!.players).length;
   const isHost = roomData!.host === myPlayerId;
+  console.log("[renderLobby]", { isHost, myPlayerId: (myPlayerId ?? "null").slice(0, 4), host: (roomData!.host ?? "").slice(0, 4), wrapHidden: $("collective-wrap").hidden });
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
   start.disabled = n < 2;
@@ -256,6 +288,17 @@ function renderLobby() {
   }
   const cats = roomData!.categories?.length ? roomData!.categories : null;
   $("lobby-cats").textContent = cats ? `Spectra: ${cats.join(", ")}` : "Spectra: random (all categories)";
+  const collective = roomData!.collective ?? true;
+  if (isHost) {
+    const t = $("collective-toggle") as HTMLInputElement;
+    if (document.activeElement !== t) t.checked = collective;
+    $("collective-wrap").hidden = false;
+    $("lobby-collective").hidden = true;
+  } else {
+    $("collective-wrap").hidden = true;
+    $("lobby-collective").hidden = false;
+    $("lobby-collective").textContent = `Answering: ${collective ? "together up front (both pre-position their dial, then results play back)" : "one question at a time"}`;
+  }
 }
 
 function renderSummary() {
@@ -263,9 +306,9 @@ function renderSummary() {
   const d = roomData!;
   const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
   const n = d.round?.n ?? 0;
-  const group = Math.max(1, Math.ceil(n / qpr));
+  const group = d.collective ? (d.group ?? 1) : Math.max(1, Math.ceil(n / qpr));
   $("summary-title").textContent = `Round ${group} complete!`;
-  $("summary-round").textContent = `${qpr} questions played, +${d.roundScore ?? 0} points this round`;
+  $("summary-round").textContent = `${n} questions played, +${d.roundScore ?? 0} points this round`;
   $("summary-total").textContent = `Total score: ${d.score}`;
   const isHost = d.host === myPlayerId;
   $("btn-continue").hidden = !isHost;
@@ -275,26 +318,129 @@ function renderSummary() {
 /* ---------- game ---------- */
 
 $("btn-start").addEventListener("click", async () => {
+  if (!roomData) return;
   try {
-    await startGameTransaction(db, ref());
+    if (roomData.collective) await startCollectiveTransaction(db, ref());
+    else await startGameTransaction(db, ref());
   } catch (err) { alert("Failed to start: " + (err as Error).message); }
 });
+
+/* ---------- collect (up-front answering) ---------- */
+
+const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+function mySetupList(d: RoomData) {
+  const st = d.setup!;
+  const mine = Object.entries(st.q).filter(([, it]) => it.by === myPlayerId).map(([k, it]) => ({ it, i: k }));
+  const ps = st.byPlayer[myPlayerId!] ?? { cur: 0, skips: 2, total: mine.length };
+  return { st, mine, ps };
+}
+
+function renderSkipDots(left: number) {
+  const dots = $("skip-dots");
+  dots.innerHTML = "";
+  for (let i = 0; i < 2; i++) {
+    const d = document.createElement("span");
+    d.className = "skip-dot" + (i < left ? "" : " used");
+    dots.append(d);
+  }
+}
+
+function renderCollect() {
+  if (!roomData || !myPlayerId) return;
+  const d = roomData;
+  const st = d.setup;
+  if (!st) return;
+  show("collect");
+  $("collect-code").textContent = d.code;
+  $("collect-score").textContent = String(d.score);
+  $("collect-round").textContent = `Round ${d.group ?? 1}`;
+  const { mine, ps } = mySetupList(d);
+  const done = ps.cur >= mine.length;
+  const partner = Object.values(d.players).find((p) => p.id !== myPlayerId);
+  const partnerN = setupQList(st.q).filter((it) => it.by === partner?.id).length;
+  const partnerDone = partner ? (st.byPlayer[partner.id]?.cur ?? 0) >= partnerN : true;
+  if (done) {
+    renderSkipDots(ps.skips);
+    ($("btn-skip") as HTMLButtonElement).disabled = true;
+    $("collect-question").hidden = true;
+    $("collect-done").hidden = false;
+    $("collect-done").textContent = allSetupDone(d)
+      ? "Everyone is done — starting the reveal…"
+      : `You're done — waiting for ${partner?.name ?? "the other player"} to finish…`;
+    return;
+  }
+  $("collect-question").hidden = false;
+  $("collect-done").hidden = true;
+  const cur = mine[ps.cur];
+  $("collect-queue").textContent = `Question ${ps.cur + (MAX_SKIPS - ps.skips) + 1} of ${ps.total ?? mine.length} — your turn`;
+  $("collect-spec-left").textContent = cur.it.left;
+  $("collect-spec-right").textContent = cur.it.right;
+  if (collectIdx !== cur.i) {
+    collectIdx = cur.i;
+    draftCollect = 50;
+  }
+  setPos($("collect-marker"), draftCollect);
+  $("collect-value").textContent = String(Math.round(draftCollect));
+  const budget = 30 * mine.length;
+  const remain = Math.max(0, Math.ceil(budget - (Date.now() - (st.startedAt ?? Date.now())) / 1000));
+  $("collect-timer").textContent = `⏱ ${fmtTime(remain)} left (30s per question, cumulative)`;
+  ($("btn-skip") as HTMLButtonElement).disabled = ps.skips <= 0;
+  renderSkipDots(ps.skips);
+}
+
+async function submitCollect() {
+  const d = roomData;
+  if (!d || !myPlayerId || d.phase !== "setup") return;
+  const { mine, ps } = mySetupList(d);
+  if (ps.cur >= mine.length) return;
+  const idx = mine[ps.cur].i;
+  try {
+    await updateDoc(ref(), {
+      [`setup.q.${idx}.answer`]: Math.round(draftCollect),
+      [`setup.byPlayer.${myPlayerId}.cur`]: ps.cur + 1,
+    });
+  } catch (e) { alert("Failed: " + (e as Error).message); }
+}
+
+$("btn-answer").addEventListener("click", submitCollect);
+$("btn-skip").addEventListener("click", async () => {
+  if (!roomCode || !myPlayerId) return;
+  try { await skipSetupTransaction(db, ref(), myPlayerId); }
+  catch (e) { alert("Failed: " + (e as Error).message); }
+});
+$("btn-leave-collect").addEventListener("click", leaveRoom);
+
+collectTimer = setInterval(() => {
+  const d = roomData;
+  if (!d || d.phase !== "setup" || !d.setup || !myPlayerId) return;
+  const { mine, ps } = mySetupList(d);
+  if (ps.cur >= mine.length) return;
+  const budget = 30 * mine.length;
+  const remain = budget - (Date.now() - d.setup.startedAt) / 1000;
+  if (remain <= 0) submitCollect();
+  else renderCollect();
+}, 500);
 
 function renderGame() {
   show("game");
   const r = roomData!.round;
   if (!r) return;
+  const d = roomData!;
+  const collective = !!d.collective;
   const isGiver = r.giver === myPlayerId;
   const isGuesser = r.guesser === myPlayerId;
-  const cluePhase = roomData!.phase === "clue";
-  const guessPhase = roomData!.phase === "guess";
-  const revealPhase = roomData!.phase === "reveal";
+  const cluePhase = d.phase === "clue";
+  const guessPhase = d.phase === "guess";
+  const revealPhase = d.phase === "reveal";
 
-  $("game-code").textContent = roomData!.code;
-  $("score").textContent = String(roomData!.score);
+  $("game-code").textContent = d.code;
+  $("score").textContent = String(d.score);
   $("round-num").textContent = String(r.n);
-  $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
-  $("round-info").textContent = `${roomData!.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
+  $("round-group").textContent = String(collective ? (d.group ?? 1) : Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
+  $("round-info").textContent = collective
+    ? `${d.players[r.giver].name} placed the marker${r.giver === myPlayerId ? " — that's you" : ""}`
+    : `${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
   $("spec-left").textContent = r.left;
   $("spec-right").textContent = r.right;
 
@@ -321,8 +467,11 @@ function renderGame() {
   if (revealPhase && r.guess != null) {
     setPos($("reveal-guess"), r.guess);
     setPos($("reveal-target"), r.target);
+    $("reveal-clue-line").hidden = !r.clue;
     $("reveal-clue").textContent = r.clue;
-    $("reveal-delta").textContent = `Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`;
+    $("reveal-delta").textContent = collective
+      ? `${d.players[r.giver].name} placed it at ${r.guess} — the game drew ${r.target}, off by ${Math.abs(r.target - r.guess)}`
+      : `Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`;
     const pts = pointsFor(r.target, r.guess);
     $("reveal-points").textContent = pts > 0 ? `+${pts} points` : "+0 points";
   }
@@ -339,8 +488,8 @@ function renderGame() {
     $("guess-dial").hidden = !guessPhase;
   }
   $("reveal-panel").hidden = !revealPhase;
-  const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
-  $("btn-next").textContent = r.n % qpr === 0 ? "Finish round" : "Next question";
+  const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  $("btn-next").textContent = (collective ? r.n >= (d.setup ? setupQList(d.setup.q).length : qpr) : r.n % qpr === 0) ? "Finish round" : "Next question";
 }
 
 $("btn-continue").addEventListener("click", async () => {
@@ -370,7 +519,8 @@ $("btn-next").addEventListener("click", async () => {
   const n = roomData?.round?.n;
   if (!n) return;
   try {
-    await nextRoundTransaction(db, ref(), n);
+    if (roomData?.collective) await nextCollectiveTransaction(db, ref(), n);
+    else await nextRoundTransaction(db, ref(), n);
   } catch (err) { alert("Failed: " + (err as Error).message); }
 });
 
@@ -395,5 +545,28 @@ dialBar.addEventListener("pointerdown", (e) => {
 dialBar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
 dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
+
+const collectBar = $("collect-bar");
+let collectDragging = false;
+const moveCollect = (e: PointerEvent) => {
+  const d = roomData;
+  if (!d || !myPlayerId || d.phase !== "setup" || !d.setup) return;
+  const { mine, ps } = mySetupList(d);
+  if (ps.cur >= mine.length || mine[ps.cur].it.by !== myPlayerId) return;
+  const rect = collectBar.getBoundingClientRect();
+  let x = e.clientX - rect.left;
+  x = Math.max(0, Math.min(rect.width, x));
+  draftCollect = (x / rect.width) * 100;
+  setPos($("collect-marker"), draftCollect);
+  $("collect-value").textContent = String(Math.round(draftCollect));
+};
+collectBar.addEventListener("pointerdown", (e) => {
+  collectDragging = true;
+  collectBar.setPointerCapture(e.pointerId);
+  moveCollect(e);
+});
+collectBar.addEventListener("pointermove", (e) => { if (collectDragging) moveCollect(e); });
+collectBar.addEventListener("pointerup", () => { collectDragging = false; });
+collectBar.addEventListener("pointercancel", () => { collectDragging = false; });
 
 show("home");

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/game.ts --bundle --format=esm --external:firebase/* --outfile=dist/js/game.js && cp index.html dist/index.html && cp -r css dist/css",
+    "build": "esbuild src/game.ts --bundle --format=esm --external:firebase/* --outfile=dist/js/game.js && cp index.html dist/index.html && rm -rf dist/css && cp -r css dist/css",
     "sim": "esbuild sim/sim.ts --bundle --format=cjs --platform=node --outfile=sim/sim.bundle.cjs && node sim/sim.bundle.cjs",
     "e2e": "playwright test"
   },

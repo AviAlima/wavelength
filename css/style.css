@@ -11,6 +11,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 
 body {
@@ -264,3 +265,36 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 .required { font-style: normal; font-weight: 700; color: #f87171; font-size: 12px; }
 .error-text { color: #f87171; font-size: 13px; margin: -8px 0 10px; }
 input.input-error { border-color: #f87171; }
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: 14px;
+}
+.toggle-row input { width: 20px; height: 20px; margin-top: 2px; accent-color: #0ea5e9; flex: none; }
+.toggle-row span { font-size: 13px; color: var(--muted); margin: 0; }
+.hint-inline {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.collect-actions { display: flex; gap: 10px; margin-top: 14px; }
+.collect-actions .btn { flex: 1; }
+#collect-timer { font-weight: 700; color: var(--text); margin-bottom: 0; }
+
+.skip-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent2);
+  margin-right: 6px;
+  box-shadow: 0 0 6px rgba(245, 158, 11, .5);
+}
+.skip-dot.used { background: #2a3650; box-shadow: none; }

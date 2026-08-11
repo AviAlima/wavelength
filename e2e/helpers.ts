@@ -12,7 +12,11 @@ export async function openHome(page: Page, nick: string) {
   await page.fill("#nick-input", nick);
 }
 
-export async function createRoom(page: Page, keepOnly: string[] | null = null): Promise<string> {
+export async function createRoom(
+  page: Page,
+  keepOnly: string[] | null = null,
+  opts: { collective?: boolean } = {},
+): Promise<string> {
   await page.click("#btn-create");
   await page.waitForSelector("#screen-cats:not([hidden])");
   if (keepOnly) {
@@ -25,6 +29,16 @@ export async function createRoom(page: Page, keepOnly: string[] | null = null): 
   await page.waitForSelector("#screen-lobby:not([hidden])");
   const code = (await page.textContent("#lobby-code"))!.trim();
   expect(code).toMatch(/^[A-Z0-9]{5}$/);
+  const roomCollective = async () =>
+    ((await (await fetch(roomUrl(code))).json()).fields.collective as { booleanValue?: boolean } | undefined)?.booleanValue ?? true;
+  const toggle = page.locator("#collective-toggle");
+  if (opts.collective === true) {
+    if (!(await toggle.isChecked())) await toggle.check();
+    await expect.poll(roomCollective).toBe(true);
+  } else {
+    if (await toggle.isChecked()) await toggle.uncheck();
+    await expect.poll(roomCollective).toBe(false);
+  }
   return code;
 }
 
