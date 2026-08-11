@@ -4,7 +4,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.9.0";
+const VERSION = "1.10.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -276,7 +276,11 @@ function render() {
 const turnTargetsDone = (d: RoomData): boolean => {
   const st = d.setup;
   if (!st || !st.turn) return false;
-  return Object.entries(st.q).filter(([, it]) => it.by !== st.turn).every(([, it]) => it.answer != null);
+  const items = Object.values(st.q);
+  const next = items.find((it) => it.answer == null);
+  if (!next) return true;
+  const pids = Object.keys(d.players);
+  return st.turn !== pids.find((p) => p !== next.by)!;
 };
 
 function renderLobby() {

@@ -69,15 +69,15 @@ const freshSetup = (q: SetupItem[], pids: string[]): SetupState => ({
   startedAt: Date.now(),
 });
 
-const dealItems = (qpr: number, used: number[], categories: string[] | undefined, hostId: string, pids: string[]): { q: SetupItem[]; used: number[] } => {
-  const guestId = pids.find((p) => p !== hostId)!;
+const dealItems = (qpr: number, used: number[], categories: string[] | undefined, firstId: string, pids: string[]): { q: SetupItem[]; used: number[] } => {
+  const secondId = pids.find((p) => p !== firstId)!;
   let u = used;
   const q: SetupItem[] = [];
   for (let i = 0; i < qpr; i++) {
     const pick = pickSpectrumIndex(u, poolFor(categories));
     u = pick.used;
     const sp = SPECTRA[pick.idx];
-    q.push({ left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? hostId : guestId, clue: "", answer: null, skipped: false });
+    q.push({ left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? firstId : secondId, clue: "", answer: null, skipped: false });
   }
   return { q, used: u };
 };
@@ -148,7 +148,8 @@ export const startCollectiveTransaction = async (db: Firestore, roomRef: Documen
     const pids = Object.keys(data.players);
     if (pids.length < 2) return null;
     const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
-    const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
+    const firstId = pids.find((p) => p !== data.host)!;
+    const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, firstId, pids);
     const setup = freshSetup(deal.q, pids);
     tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
     return deal.q.length;
@@ -196,7 +197,8 @@ export const setupDoneTransaction = async (
     if (!snap.exists() || !data || data.phase !== "setup" || !data.setup) return false;
     if (!allCluesDone(data)) return false;
     const pids = Object.keys(data.players);
-    const first = (data.group ?? 1) % 2 === 1 ? data.host : pids.find((p) => p !== data.host)!;
+    const items = setupQList(data.setup.q);
+    const first = items.length ? pids.find((p) => p !== items[0].by)! : data.host;
     tx.update(roomRef, { phase: "guess", "setup.turn": first });
     return true;
   });
@@ -215,15 +217,14 @@ export const guessTurnTransaction = async (
     const active = st.turn;
     if (!pids.includes(active)) return false;
     const items = setupQList(st.q);
-    const activeDone = items.filter((it) => it.by !== active).every((it) => it.answer != null);
-    if (!activeDone) return false;
-    const partner = pids.find((p) => p !== active)!;
-    const partnerDone = items.filter((it) => it.by === active).every((it) => it.answer != null);
-    if (partnerDone) {
+    const next = items.find((it) => it.answer == null);
+    if (!next) {
       tx.update(roomRef, { phase: "reveal" });
-    } else {
-      tx.update(roomRef, { "setup.turn": partner });
+      return true;
     }
+    const guesser = pids.find((p) => p !== next.by)!;
+    if (st.turn === guesser) return false;
+    tx.update(roomRef, { "setup.turn": guesser });
     return true;
   });
 };
@@ -306,7 +307,8 @@ export const continueTransaction = async (
       const pids = Object.keys(data.players);
       if (pids.length < 2) return null;
       const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
-      const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
+      const firstId = pids.find((p) => p !== data.host)!;
+      const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, firstId, pids);
       const setup = freshSetup(deal.q, pids);
       tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
       return null;
