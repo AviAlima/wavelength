@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, revealDoneTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.8.0";
+const VERSION = "1.9.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -34,11 +34,8 @@ let draftClues: Record<string, string> = {};
 let draftGuesses: Record<string, number> = {};
 let setupDoneFired = false;
 let guessTurnFired = false;
-let revealDoneFired = false;
 let lastTurn = "";
 let lastSetupStart = 0;
-
-const PLAY_MS = 3500;
 
 const ref = () => doc(db, "rooms", roomCode!);
 const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), summary: $("screen-summary") };
@@ -169,7 +166,6 @@ function openRoom(code: string) {
       lastSetupStart = roomData.setup.startedAt;
       setupDoneFired = false;
       guessTurnFired = false;
-      revealDoneFired = false;
       lastTurn = "";
       draftClues = {};
       draftGuesses = {};
@@ -209,7 +205,6 @@ async function leaveRoom() {
   draftGuesses = {};
   setupDoneFired = false;
   guessTurnFired = false;
-  revealDoneFired = false;
   lastTurn = "";
   lastSetupStart = 0;
   show("home");
@@ -276,28 +271,12 @@ function render() {
       }, 1200);
     }
   }
-  if (roomData.collective && roomData.phase === "reveal" && revealElapsed(roomData) && !revealDoneFired) {
-    revealDoneFired = true;
-    setTimeout(() => {
-      if (roomData?.phase !== "reveal") { revealDoneFired = false; return; }
-      revealDoneTransaction(db, ref()).then((pts) => {
-        if (pts == null) revealDoneFired = false;
-      }).catch((err) => { revealDoneFired = false; alert("Failed to open the summary: " + (err as Error).message); });
-    }, 500);
-  }
 }
 
 const turnTargetsDone = (d: RoomData): boolean => {
   const st = d.setup;
   if (!st || !st.turn) return false;
   return Object.entries(st.q).filter(([, it]) => it.by !== st.turn).every(([, it]) => it.answer != null);
-};
-
-const revealElapsed = (d: RoomData): boolean => {
-  const st = d.setup;
-  if (!st) return false;
-  const count = Object.keys(st.q).length;
-  return Date.now() - (d.revealedAt ?? 0) >= count * PLAY_MS;
 };
 
 function renderLobby() {
@@ -625,14 +604,13 @@ function renderReveal() {
   $("skip-wrap").hidden = true;
   const entries = Object.entries(st.q);
   const count = entries.length;
-  const elapsed = Math.max(0, Date.now() - (d.revealedAt ?? Date.now()));
-  const idx = Math.min(Math.floor(elapsed / PLAY_MS), Math.max(0, count - 1));
+  const idx = Math.min(st.reviewIdx ?? 0, Math.max(0, count - 1));
   $("collect-progress").textContent = count ? `Review ${idx + 1} of ${count}` : "No questions this round";
   const list = $("collect-list");
   list.innerHTML = "";
+  const c = card();
   if (count) {
     const [, it] = entries[idx];
-    const c = card();
     specLabels(c, it.left, it.right);
     clueBox(c, it.clue);
     revealDial(c, it.target, it.answer ?? 50);
@@ -641,8 +619,36 @@ function renderReveal() {
     const p = pointsFor(it.target, it.answer ?? 50);
     pts.textContent = `Target ${it.target} vs guess ${it.answer ?? "—"} — off by ${Math.abs(it.target - (it.answer ?? 50))} → +${p} pts`;
     c.append(pts);
-    list.append(c);
   }
+  if (d.host === myPlayerId) {
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const next = document.createElement("button");
+    next.className = "btn primary";
+    next.textContent = count ? (idx + 1 >= count ? "Finish review" : "Next") : "See results";
+    next.addEventListener("click", async () => {
+      try { await reviewNextTransaction(db, ref(), myPlayerId!); }
+      catch (e) { alert("Failed: " + (e as Error).message); }
+    });
+    actions.append(next);
+    if (count) {
+      const skip = document.createElement("button");
+      skip.className = "btn";
+      skip.textContent = "Skip review";
+      skip.addEventListener("click", async () => {
+        try { await reviewSkipTransaction(db, ref(), myPlayerId!); }
+        catch (e) { alert("Failed: " + (e as Error).message); }
+      });
+      actions.append(skip);
+    }
+    c.append(actions);
+  } else {
+    const hint = document.createElement("p");
+    hint.className = "hint small-hint";
+    hint.textContent = "The host is driving the review.";
+    c.append(hint);
+  }
+  list.append(c);
   $("collect-done").hidden = true;
 }
 
@@ -766,9 +772,5 @@ dialBar.addEventListener("pointerdown", (e) => {
 dialBar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
 dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
-
-setInterval(() => {
-  if (roomData?.phase === "reveal") render();
-}, 400);
 
 show("home");

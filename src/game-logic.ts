@@ -33,7 +33,6 @@ export interface RoomData {
   collective?: boolean;
   setup?: SetupState;
   group?: number;
-  revealedAt?: number;
 }
 
 export interface SetupItem {
@@ -55,6 +54,7 @@ export interface SetupState {
   q: Record<string, SetupItem>;
   byPlayer: Record<string, PlayerSetup>;
   turn: string;
+  reviewIdx: number;
   startedAt: number;
 }
 
@@ -65,6 +65,7 @@ const freshSetup = (q: SetupItem[], pids: string[]): SetupState => ({
   q: Object.fromEntries(q.map((it, i) => [String(i), it])),
   byPlayer: Object.fromEntries(pids.map((pid) => [pid, { skips: MAX_SKIPS, total: q.filter((it) => it.by === pid).length }])),
   turn: "",
+  reviewIdx: 0,
   startedAt: Date.now(),
 });
 
@@ -149,7 +150,7 @@ export const startCollectiveTransaction = async (db: Firestore, roomRef: Documen
     const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
     const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
     const setup = freshSetup(deal.q, pids);
-    tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1, revealedAt: 0 });
+    tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
     return deal.q.length;
   });
 };
@@ -219,7 +220,7 @@ export const guessTurnTransaction = async (
     const partner = pids.find((p) => p !== active)!;
     const partnerDone = items.filter((it) => it.by === active).every((it) => it.answer != null);
     if (partnerDone) {
-      tx.update(roomRef, { phase: "reveal", revealedAt: Date.now() });
+      tx.update(roomRef, { phase: "reveal" });
     } else {
       tx.update(roomRef, { "setup.turn": partner });
     }
@@ -227,19 +228,41 @@ export const guessTurnTransaction = async (
   });
 };
 
-export const revealDoneTransaction = async (
+export const reviewNextTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
-): Promise<number | null> => {
+  pid: string,
+): Promise<boolean> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
-    if (!snap.exists() || !data || data.phase !== "reveal" || !data.setup) return null;
-    if (!allGuessesDone(data)) return null;
+    if (!snap.exists() || !data || data.phase !== "reveal" || data.host !== pid || !data.setup) return false;
+    const count = setupQList(data.setup.q).length;
+    const idx = (data.setup.reviewIdx ?? 0) + 1;
+    if (idx >= count) {
+      const items = setupQList(data.setup.q);
+      const pts = items.reduce((sum, it) => sum + pointsFor(it.target, it.answer ?? 50), 0);
+      tx.update(roomRef, { score: data.score + pts, roundScore: pts, phase: "summary" });
+    } else {
+      tx.update(roomRef, { "setup.reviewIdx": idx });
+    }
+    return true;
+  });
+};
+
+export const reviewSkipTransaction = async (
+  db: Firestore,
+  roomRef: DocumentReference,
+  pid: string,
+): Promise<boolean> => {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef);
+    const data = snap.data() as RoomData | undefined;
+    if (!snap.exists() || !data || data.phase !== "reveal" || data.host !== pid || !data.setup) return false;
     const items = setupQList(data.setup.q);
     const pts = items.reduce((sum, it) => sum + pointsFor(it.target, it.answer ?? 50), 0);
     tx.update(roomRef, { score: data.score + pts, roundScore: pts, phase: "summary" });
-    return pts;
+    return true;
   });
 };
 
@@ -285,7 +308,7 @@ export const continueTransaction = async (
       const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
       const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
       const setup = freshSetup(deal.q, pids);
-      tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1, revealedAt: 0 });
+      tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
       return null;
     }
     if (!r || r.n !== expectedN) return null;
