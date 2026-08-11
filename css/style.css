@@ -284,9 +284,18 @@ input.input-error { border-color: #f87171; }
   margin-top: 4px;
 }
 
-.collect-actions { display: flex; gap: 10px; margin-top: 14px; }
-.collect-actions .btn { flex: 1; }
-#collect-timer { font-weight: 700; color: var(--text); margin-bottom: 0; }
+.q-card {
+  background: var(--card2);
+  border: 1px solid #2a3650;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.q-card .dial { margin: 12px 0 6px; }
+.q-card .clue-box { margin-bottom: 10px; }
+.card-actions { display: flex; gap: 10px; margin-top: 12px; }
+.card-actions .btn { flex: 1; }
+.q-pts { font-weight: 800; color: var(--ok); margin: 10px 0 0; }
 
 .skip-dot {
   display: inline-block;

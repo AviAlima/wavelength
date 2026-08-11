@@ -40,12 +40,12 @@ export interface SetupItem {
   right: string;
   target: number;
   by: string;
+  clue: string;
   answer: number | null;
   skipped: boolean;
 }
 
 export interface PlayerSetup {
-  cur: number;
   skips: number;
   total: number;
 }
@@ -59,9 +59,9 @@ export interface SetupState {
 export const setupQList = (q: SetupState["q"]): SetupItem[] =>
   Array.isArray(q) ? q : Object.values(q);
 
-const freshSetup = (q: SetupItem[], pids: string[], hostId: string): SetupState => ({
+const freshSetup = (q: SetupItem[], pids: string[]): SetupState => ({
   q: Object.fromEntries(q.map((it, i) => [String(i), it])),
-  byPlayer: Object.fromEntries(pids.map((pid) => [pid, { cur: 0, skips: MAX_SKIPS, total: q.filter((it) => it.by === pid).length }])),
+  byPlayer: Object.fromEntries(pids.map((pid) => [pid, { skips: MAX_SKIPS, total: q.filter((it) => it.by === pid).length }])),
   startedAt: Date.now(),
 });
 
@@ -73,7 +73,7 @@ const dealItems = (qpr: number, used: number[], categories: string[] | undefined
     const pick = pickSpectrumIndex(u, poolFor(categories));
     u = pick.used;
     const sp = SPECTRA[pick.idx];
-    q.push({ left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? hostId : guestId, answer: null, skipped: false });
+    q.push({ left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? hostId : guestId, clue: "", answer: null, skipped: false });
   }
   return { q, used: u };
 };
@@ -145,7 +145,7 @@ export const startCollectiveTransaction = async (db: Firestore, roomRef: Documen
     if (pids.length < 2) return null;
     const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
     const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
-    const setup = freshSetup(deal.q, pids, data.host);
+    const setup = freshSetup(deal.q, pids);
     tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
     return deal.q.length;
   });
@@ -155,77 +155,60 @@ export const skipSetupTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
   pid: string,
+  key: string,
 ): Promise<boolean> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
     if (!snap.exists() || !data || data.phase !== "setup" || !data.setup) return false;
-    const q = data.setup.q;
     const ps = data.setup.byPlayer[pid];
-    if (!ps || ps.skips <= 0) return false;
-    const mine = Object.entries(q).filter(([, it]) => it.by === pid);
-    if (ps.cur >= mine.length) return false;
-    const [key] = mine[ps.cur];
+    const item = data.setup.q[key];
+    if (!ps || ps.skips <= 0 || !item || item.by !== pid) return false;
     tx.update(roomRef, {
       [`setup.q.${key}`]: deleteField(),
-      [`setup.byPlayer.${pid}.cur`]: ps.cur,
       [`setup.byPlayer.${pid}.skips`]: ps.skips - 1,
     });
     return true;
   });
 };
 
-export const allSetupDone = (data: RoomData): boolean => {
+export const allCluesDone = (data: RoomData): boolean => {
   if (!data.setup) return false;
-  const { q, byPlayer } = data.setup;
-  return Object.keys(data.players).every((pid) => {
-    const n = setupQList(q).filter((it) => it.by === pid).length;
-    return (byPlayer[pid]?.cur ?? 0) >= n;
-  });
+  return setupQList(data.setup.q).every((it) => it.clue.trim() !== "");
+};
+
+export const allGuessesDone = (data: RoomData): boolean => {
+  if (!data.setup) return false;
+  return setupQList(data.setup.q).every((it) => it.answer != null);
 };
 
 export const setupDoneTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
-): Promise<Round | null> => {
+): Promise<boolean> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
-    if (!snap.exists() || !data || data.phase !== "setup" || !data.setup) return null;
-    if (!allSetupDone(data)) return null;
-    const item = setupQList(data.setup.q)[0];
-    const guesser = Object.keys(data.players).find((p) => p !== item.by)!;
-    const round: Round = { n: 1, giver: item.by, guesser, left: item.left, right: item.right, target: item.target, clue: "", guess: item.answer ?? 50 };
-    tx.update(roomRef, { phase: "reveal", round });
-    return round;
+    if (!snap.exists() || !data || data.phase !== "setup" || !data.setup) return false;
+    if (!allCluesDone(data)) return false;
+    tx.update(roomRef, { phase: "guess" });
+    return true;
   });
 };
 
-export const nextCollectiveTransaction = async (
+export const guessDoneTransaction = async (
   db: Firestore,
   roomRef: DocumentReference,
-  expectedN: number,
-): Promise<{ points: number; round: Round; ended: boolean } | null> => {
+): Promise<number | null> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
     const data = snap.data() as RoomData | undefined;
-    if (!snap.exists() || !data) return null;
-    const r = data.round;
-    const st = data.setup;
-    if (!r || !st || r.n !== expectedN || r.guess == null) return null;
-    const pts = pointsFor(r.target, r.guess);
-    const score = data.score + pts;
-    const roundScore = (data.roundScore ?? 0) + pts;
-    const qList = setupQList(st.q);
-    if (r.n >= qList.length) {
-      tx.update(roomRef, { score, roundScore, phase: "summary" });
-      return { points: pts, round: r, ended: true };
-    }
-    const item = qList[r.n];
-    const guesser = Object.keys(data.players).find((p) => p !== item.by)!;
-    const round: Round = { n: r.n + 1, giver: item.by, guesser, left: item.left, right: item.right, target: item.target, clue: "", guess: item.answer ?? 50 };
-    tx.update(roomRef, { score, roundScore, phase: "reveal", round });
-    return { points: pts, round, ended: false };
+    if (!snap.exists() || !data || data.phase !== "guess" || !data.setup) return null;
+    if (!allGuessesDone(data)) return null;
+    const items = setupQList(data.setup.q);
+    const pts = items.reduce((sum, it) => sum + pointsFor(it.target, it.answer ?? 50), 0);
+    tx.update(roomRef, { score: data.score + pts, roundScore: pts, phase: "summary" });
+    return pts;
   });
 };
 
@@ -265,16 +248,16 @@ export const continueTransaction = async (
     const data = snap.data() as RoomData | undefined;
     if (!snap.exists() || !data || data.phase !== "summary") return null;
     const r = data.round;
-    if (!r || r.n !== expectedN) return null;
     if (data.collective) {
       const pids = Object.keys(data.players);
       if (pids.length < 2) return null;
       const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
       const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, data.host, pids);
-      const setup = freshSetup(deal.q, pids, data.host);
+      const setup = freshSetup(deal.q, pids);
       tx.update(roomRef, { phase: "setup", setup, roundScore: 0, usedSpectra: deal.used, group: (data.group ?? 0) + 1 });
       return null;
     }
+    if (!r || r.n !== expectedN) return null;
     const pick = pickSpectrumIndex(data.usedSpectra ?? [], poolFor(data.categories));
     const round = makeRound(r.n + 1, r.guesser, r.giver, pick.idx);
     tx.update(roomRef, { roundScore: 0, usedSpectra: pick.used, phase: "clue", round });

@@ -63,7 +63,7 @@
       <p id="lobby-qpr" class="hint" hidden></p>
       <label class="field toggle-row" id="collective-wrap" hidden>
         <input type="checkbox" id="collective-toggle" checked>
-        <span>Answer together up front<em class="hint-inline">Both players pre-position their dial for the round's questions like the original game, then the results play back. Off = one question at a time.</em></span>
+        <span>All spectra up front<em class="hint-inline">Like the original game: the round's spectra are dealt ahead, each player sees the secret target on their own and writes clues, then you guess each other's targets. Off = one question at a time.</em></span>
       </label>
       <p id="lobby-collective" class="hint" hidden></p>
       <p id="lobby-cats" class="hint"></p>
@@ -131,24 +131,10 @@
       <div class="score-chip">Score <b id="collect-score">0</b></div>
     </header>
     <div class="card game-card">
-      <p class="round-info"><span id="collect-round">Round 1</span> • <span id="collect-queue"></span></p>
-      <div id="collect-question">
-        <p class="hint" id="collect-timer"></p>
-        <div class="spectrum">
-          <div class="spec-labels"><span id="collect-spec-left"></span><span id="collect-spec-right"></span></div>
-          <div class="dial">
-            <div id="collect-bar" class="dial-bar">
-              <div id="collect-marker" class="marker arrow" style="left:50%"></div>
-            </div>
-          </div>
-        </div>
-        <p class="hint">Drag the marker to your answer: <b id="collect-value">50</b></p>
-        <div class="collect-actions">
-          <button id="btn-answer" class="btn primary">Answer</button>
-          <button id="btn-skip" class="btn">Skip</button>
-        </div>
-        <p class="hint small-hint"><span id="skip-dots"></span> <span id="skip-text">skips left — skipped questions are dropped from the round</span></p>
-      </div>
+      <p class="round-info"><span id="collect-round">Round 1</span> • <span id="collect-title"></span></p>
+      <p class="hint" id="collect-progress"></p>
+      <div id="collect-list"></div>
+      <p class="hint small-hint" id="skip-wrap"><span id="skip-dots"></span> <span id="skip-text">skips left — skipped spectra are dropped from the round</span></p>
       <p class="hint" id="collect-done" hidden></p>
       <button id="btn-leave-collect" class="btn ghost">Leave party</button>
     </div>
@@ -158,6 +144,7 @@
     <div class="card">
       <h2 id="summary-title">Round complete!</h2>
       <p class="hint" id="summary-round"></p>
+      <div id="summary-playback"></div>
       <p class="points" id="summary-total"></p>
       <button id="btn-continue" class="btn primary" hidden>Continue playing</button>
       <p id="summary-wait" class="hint" hidden>Waiting for the host…</p>

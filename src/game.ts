@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, nextCollectiveTransaction, allSetupDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessDoneTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -30,11 +30,11 @@ let roomData: RoomData | null = null;
 let unsub: (() => void) | null = null;
 let draftGuess = 50;
 let resetRoundN = 0;
-let draftCollect = 50;
-let collectIdx: string | null = null;
+let draftClues: Record<string, string> = {};
+let draftGuesses: Record<string, number> = {};
 let setupDoneFired = false;
+let guessDoneFired = false;
 let lastSetupStart = 0;
-let collectTimer: ReturnType<typeof setInterval> | null = null;
 
 const ref = () => doc(db, "rooms", roomCode!);
 const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), summary: $("screen-summary") };
@@ -164,6 +164,9 @@ function openRoom(code: string) {
     if (roomData && roomData.setup && roomData.setup.startedAt !== lastSetupStart) {
       lastSetupStart = roomData.setup.startedAt;
       setupDoneFired = false;
+      guessDoneFired = false;
+      draftClues = {};
+      draftGuesses = {};
     }
   });
 }
@@ -196,11 +199,11 @@ async function leaveRoom() {
   roomCode = null;
   roomData = null;
   unsub = null;
-  draftCollect = 50;
-  collectIdx = null;
+  draftClues = {};
+  draftGuesses = {};
   setupDoneFired = false;
+  guessDoneFired = false;
   lastSetupStart = 0;
-  if (collectTimer) { clearInterval(collectTimer); collectTimer = null; }
   show("home");
 }
 
@@ -238,16 +241,26 @@ $("btn-end").addEventListener("click", leaveRoom);
 function render() {
   if (!roomData) return;
   if (roomData.phase === "lobby") renderLobby();
-  else if (roomData.phase === "setup") renderCollect();
+  else if (roomData.collective && roomData.phase === "setup") renderCollect();
+  else if (roomData.collective && roomData.phase === "guess") renderGuess();
   else if (roomData.phase === "summary") renderSummary();
   else renderGame();
-  if (roomData.phase === "setup" && allSetupDone(roomData) && !setupDoneFired) {
+  if (roomData.phase === "setup" && allCluesDone(roomData) && !setupDoneFired) {
     setupDoneFired = true;
     setTimeout(() => {
       if (roomData?.phase !== "setup") { setupDoneFired = false; return; }
-      setupDoneTransaction(db, ref()).then((round) => {
-        if (!round) setupDoneFired = false;
-      }).catch((err) => { setupDoneFired = false; alert("Failed to start the reveal: " + (err as Error).message); });
+      setupDoneTransaction(db, ref()).then((ok) => {
+        if (!ok) setupDoneFired = false;
+      }).catch((err) => { setupDoneFired = false; alert("Failed to start the guessing stage: " + (err as Error).message); });
+    }, 1500);
+  }
+  if (roomData.phase === "guess" && allGuessesDone(roomData) && !guessDoneFired) {
+    guessDoneFired = true;
+    setTimeout(() => {
+      if (roomData?.phase !== "guess") { guessDoneFired = false; return; }
+      guessDoneTransaction(db, ref()).then((pts) => {
+        if (pts == null) guessDoneFired = false;
+      }).catch((err) => { guessDoneFired = false; alert("Failed to open the summary: " + (err as Error).message); });
     }, 1500);
   }
 }
@@ -297,7 +310,7 @@ function renderLobby() {
   } else {
     $("collective-wrap").hidden = true;
     $("lobby-collective").hidden = false;
-    $("lobby-collective").textContent = `Answering: ${collective ? "together up front (both pre-position their dial, then results play back)" : "one question at a time"}`;
+    $("lobby-collective").textContent = `Answering: ${collective ? "all spectra up front — each player sees the secret target and writes clues, then you guess each other's targets" : "one question at a time"}`;
   }
 }
 
@@ -305,11 +318,27 @@ function renderSummary() {
   show("summary");
   const d = roomData!;
   const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
-  const n = d.round?.n ?? 0;
+  const n = d.collective ? (d.setup ? Object.values(d.setup.q).length : 0) : (d.round?.n ?? 0);
   const group = d.collective ? (d.group ?? 1) : Math.max(1, Math.ceil(n / qpr));
   $("summary-title").textContent = `Round ${group} complete!`;
   $("summary-round").textContent = `${n} questions played, +${d.roundScore ?? 0} points this round`;
   $("summary-total").textContent = `Total score: ${d.score}`;
+  const playback = $("summary-playback");
+  playback.innerHTML = "";
+  if (d.collective && d.setup) {
+    for (const [, it] of Object.entries(d.setup.q)) {
+      const c = card();
+      specLabels(c, it.left, it.right);
+      clueBox(c, it.clue);
+      revealDial(c, it.target, it.answer ?? 50);
+      const pts = document.createElement("p");
+      pts.className = "q-pts";
+      const p = pointsFor(it.target, it.answer ?? 50);
+      pts.textContent = `Target ${it.target} vs guess ${it.answer ?? "—"} — off by ${Math.abs(it.target - (it.answer ?? 50))} → +${p} pts`;
+      c.append(pts);
+      playback.append(c);
+    }
+  }
   const isHost = d.host === myPlayerId;
   $("btn-continue").hidden = !isHost;
   $("summary-wait").hidden = isHost;
@@ -325,26 +354,80 @@ $("btn-start").addEventListener("click", async () => {
   } catch (err) { alert("Failed to start: " + (err as Error).message); }
 });
 
-/* ---------- collect (up-front answering) ---------- */
-
-const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
-function mySetupList(d: RoomData) {
-  const st = d.setup!;
-  const mine = Object.entries(st.q).filter(([, it]) => it.by === myPlayerId).map(([k, it]) => ({ it, i: k }));
-  const ps = st.byPlayer[myPlayerId!] ?? { cur: 0, skips: 2, total: mine.length };
-  return { st, mine, ps };
-}
+/* ---------- collective (up front) ---------- */
 
 function renderSkipDots(left: number) {
   const dots = $("skip-dots");
   dots.innerHTML = "";
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < MAX_SKIPS; i++) {
     const d = document.createElement("span");
     d.className = "skip-dot" + (i < left ? "" : " used");
     dots.append(d);
   }
 }
+
+const card = () => {
+  const c = document.createElement("div");
+  c.className = "q-card";
+  return c;
+};
+
+const specLabels = (c: HTMLElement, left: string, right: string) => {
+  const labels = document.createElement("div");
+  labels.className = "spec-labels";
+  const l = document.createElement("span");
+  l.textContent = left;
+  const r = document.createElement("span");
+  r.textContent = right;
+  labels.append(l, r);
+  c.append(labels);
+};
+
+const miniDial = (c: HTMLElement, markerClass: string, pos: number) => {
+  const dial = document.createElement("div");
+  dial.className = "dial";
+  const bar = document.createElement("div");
+  bar.className = "dial-bar";
+  const m = document.createElement("div");
+  m.className = "marker " + markerClass;
+  m.style.left = `${pos}%`;
+  bar.append(m);
+  dial.append(bar);
+  c.append(dial);
+  return { bar, marker: m };
+};
+
+const revealDial = (c: HTMLElement, target: number, guess: number) => {
+  const dial = document.createElement("div");
+  dial.className = "dial";
+  const bar = document.createElement("div");
+  bar.className = "dial-bar";
+  const g = document.createElement("div");
+  g.className = "marker arrow reveal";
+  g.style.left = `${guess}%`;
+  const t = document.createElement("div");
+  t.className = "marker target reveal";
+  t.style.left = `${target}%`;
+  bar.append(g, t);
+  dial.append(bar);
+  c.append(dial);
+};
+
+const clueBox = (c: HTMLElement, text: string) => {
+  const box = document.createElement("div");
+  box.className = "clue-box";
+  box.textContent = `“${text}”`;
+  c.append(box);
+};
+
+const mySet = (d: RoomData) => {
+  const st = d.setup!;
+  const entries = Object.entries(st.q);
+  const mine = entries.filter(([, it]) => it.by === myPlayerId);
+  const theirs = entries.filter(([, it]) => it.by !== myPlayerId);
+  const partner = Object.values(d.players).find((p) => p.id !== myPlayerId);
+  return { st, entries, mine, theirs, partner };
+};
 
 function renderCollect() {
   if (!roomData || !myPlayerId) return;
@@ -355,79 +438,143 @@ function renderCollect() {
   $("collect-code").textContent = d.code;
   $("collect-score").textContent = String(d.score);
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
-  const { mine, ps } = mySetupList(d);
-  const done = ps.cur >= mine.length;
-  const partner = Object.values(d.players).find((p) => p.id !== myPlayerId);
-  const partnerN = setupQList(st.q).filter((it) => it.by === partner?.id).length;
-  const partnerDone = partner ? (st.byPlayer[partner.id]?.cur ?? 0) >= partnerN : true;
-  if (done) {
-    renderSkipDots(ps.skips);
-    ($("btn-skip") as HTMLButtonElement).disabled = true;
-    $("collect-question").hidden = true;
-    $("collect-done").hidden = false;
-    $("collect-done").textContent = allSetupDone(d)
-      ? "Everyone is done — starting the reveal…"
-      : `You're done — waiting for ${partner?.name ?? "the other player"} to finish…`;
-    return;
-  }
-  $("collect-question").hidden = false;
-  $("collect-done").hidden = true;
-  const cur = mine[ps.cur];
-  $("collect-queue").textContent = `Question ${ps.cur + (MAX_SKIPS - ps.skips) + 1} of ${ps.total ?? mine.length} — your turn`;
-  $("collect-spec-left").textContent = cur.it.left;
-  $("collect-spec-right").textContent = cur.it.right;
-  if (collectIdx !== cur.i) {
-    collectIdx = cur.i;
-    draftCollect = 50;
-  }
-  setPos($("collect-marker"), draftCollect);
-  $("collect-value").textContent = String(Math.round(draftCollect));
-  const budget = 30 * mine.length;
-  const remain = Math.max(0, Math.ceil(budget - (Date.now() - (st.startedAt ?? Date.now())) / 1000));
-  $("collect-timer").textContent = `⏱ ${fmtTime(remain)} left (30s per question, cumulative)`;
-  ($("btn-skip") as HTMLButtonElement).disabled = ps.skips <= 0;
-  renderSkipDots(ps.skips);
-}
-
-async function submitCollect() {
-  const d = roomData;
-  if (!d || !myPlayerId || d.phase !== "setup") return;
-  const { mine, ps } = mySetupList(d);
-  if (ps.cur >= mine.length) return;
-  const idx = mine[ps.cur].i;
-  try {
-    await updateDoc(ref(), {
-      [`setup.q.${idx}.answer`]: Math.round(draftCollect),
-      [`setup.byPlayer.${myPlayerId}.cur`]: ps.cur + 1,
+  $("collect-title").textContent = "Your spectra — the target is marked, write a clue for each";
+  const { mine, partner } = mySet(d);
+  const ps = st.byPlayer[myPlayerId!];
+  const skips = ps?.skips ?? MAX_SKIPS;
+  const done = mine.filter(([, it]) => it.clue.trim() !== "").length;
+  $("collect-progress").textContent = mine.length ? `Clues ${done} of ${mine.length}` : "You skipped all of yours";
+  $("skip-wrap").hidden = !mine.length;
+  renderSkipDots(skips);
+  const list = $("collect-list");
+  list.innerHTML = "";
+  for (const [key, it] of mine) {
+    const c = card();
+    specLabels(c, it.left, it.right);
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = `Target: ${it.target}`;
+    const p = document.createElement("p");
+    p.className = "hint small-hint";
+    p.append(badge, " Give a clue that lands your partner near the target:");
+    c.append(p);
+    miniDial(c, "target", it.target);
+    const input = document.createElement("input");
+    input.maxLength = 60;
+    input.placeholder = "e.g. “Sunday morning”";
+    input.value = draftClues[key] ?? it.clue;
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const send = document.createElement("button");
+    send.className = "btn primary";
+    send.textContent = it.clue.trim() ? "Update clue" : "Send clue";
+    const syncSend = () => { send.disabled = !input.value.trim(); };
+    input.addEventListener("input", () => {
+      draftClues[key] = input.value;
+      syncSend();
     });
-  } catch (e) { alert("Failed: " + (e as Error).message); }
+    send.addEventListener("click", async () => {
+      const v = input.value.trim();
+      if (!v) return;
+      try { await updateDoc(ref(), { [`setup.q.${key}.clue`]: v }); }
+      catch (e) { alert("Failed: " + (e as Error).message); }
+    });
+    actions.append(send);
+    const skip = document.createElement("button");
+    skip.className = "btn";
+    skip.textContent = "Skip";
+    skip.disabled = skips <= 0;
+    skip.addEventListener("click", async () => {
+      try { await skipSetupTransaction(db, ref(), myPlayerId!, key); }
+      catch (e) { alert("Failed: " + (e as Error).message); }
+    });
+    actions.append(skip);
+    c.append(input, actions);
+    list.append(c);
+    syncSend();
+  }
+  const allDone = allCluesDone(d);
+  $("collect-done").hidden = false;
+  if (allDone) $("collect-done").textContent = "All clues are in — starting the guessing stage…";
+  else if (done >= mine.length && mine.length > 0) $("collect-done").textContent = `You're done — waiting for ${partner?.name ?? "the other player"} to finish their clues…`;
+  else if (!mine.length) $("collect-done").textContent = `You have no spectra left — waiting for ${partner?.name ?? "the other player"} to finish their clues…`;
+  else $("collect-done").hidden = true;
 }
 
-$("btn-answer").addEventListener("click", submitCollect);
-$("btn-skip").addEventListener("click", async () => {
-  if (!roomCode || !myPlayerId) return;
-  try { await skipSetupTransaction(db, ref(), myPlayerId); }
-  catch (e) { alert("Failed: " + (e as Error).message); }
-});
-$("btn-leave-collect").addEventListener("click", leaveRoom);
-
-collectTimer = setInterval(() => {
+function renderGuess() {
+  if (!roomData || !myPlayerId) return;
   const d = roomData;
-  if (!d || d.phase !== "setup" || !d.setup || !myPlayerId) return;
-  const { mine, ps } = mySetupList(d);
-  if (ps.cur >= mine.length) return;
-  const budget = 30 * mine.length;
-  const remain = budget - (Date.now() - d.setup.startedAt) / 1000;
-  if (remain <= 0) submitCollect();
-  else renderCollect();
-}, 500);
+  const st = d.setup;
+  if (!st) return;
+  show("collect");
+  $("collect-code").textContent = d.code;
+  $("collect-score").textContent = String(d.score);
+  $("collect-round").textContent = `Round ${d.group ?? 1}`;
+  $("collect-title").textContent = "Guess the targets — use your partner's clues";
+  const { theirs, partner } = mySet(d);
+  const done = theirs.filter(([, it]) => it.answer != null).length;
+  $("collect-progress").textContent = theirs.length ? `Guesses ${done} of ${theirs.length}` : "Nothing to guess on your side";
+  $("skip-wrap").hidden = true;
+  const list = $("collect-list");
+  list.innerHTML = "";
+  for (const [key, it] of theirs) {
+    const c = card();
+    specLabels(c, it.left, it.right);
+    clueBox(c, it.clue);
+    if (it.answer != null) {
+      miniDial(c, "arrow", it.answer);
+      const locked = document.createElement("p");
+      locked.className = "hint small-hint";
+      locked.textContent = "Locked — the summary will reveal everything";
+      c.append(locked);
+    } else {
+      const { bar, marker } = miniDial(c, "arrow", draftGuesses[key] ?? 50);
+      const val = document.createElement("p");
+      val.className = "hint";
+      val.textContent = `Your guess: ${Math.round(draftGuesses[key] ?? 50)}`;
+      c.append(val);
+      let dragging = false;
+      const move = (e: PointerEvent) => {
+        const rect = bar.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        x = Math.max(0, Math.min(rect.width, x));
+        draftGuesses[key] = (x / rect.width) * 100;
+        marker.style.left = `${draftGuesses[key]}%`;
+        val.textContent = `Your guess: ${Math.round(draftGuesses[key])}`;
+      };
+      bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); move(e); });
+      bar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
+      bar.addEventListener("pointerup", () => { dragging = false; });
+      bar.addEventListener("pointercancel", () => { dragging = false; });
+      const actions = document.createElement("div");
+      actions.className = "card-actions";
+      const lock = document.createElement("button");
+      lock.className = "btn primary";
+      lock.textContent = "Lock guess";
+      lock.addEventListener("click", async () => {
+        try { await updateDoc(ref(), { [`setup.q.${key}.answer`]: Math.round(draftGuesses[key] ?? 50) }); }
+        catch (e) { alert("Failed: " + (e as Error).message); }
+      });
+      actions.append(lock);
+      c.append(actions);
+    }
+    list.append(c);
+  }
+  const allDone = allGuessesDone(d);
+  $("collect-done").hidden = false;
+  if (allDone) $("collect-done").textContent = "All guesses are in — opening the summary…";
+  else if (done >= theirs.length && theirs.length > 0) $("collect-done").textContent = `You're done — waiting for ${partner?.name ?? "the other player"} to finish their guesses…`;
+  else if (!theirs.length) $("collect-done").textContent = `Nothing to guess — waiting for ${partner?.name ?? "the other player"}…`;
+  else $("collect-done").hidden = true;
+}
+
+$("btn-leave-collect").addEventListener("click", leaveRoom);
 
 function renderGame() {
   show("game");
   const r = roomData!.round;
   if (!r) return;
   const d = roomData!;
-  const collective = !!d.collective;
   const isGiver = r.giver === myPlayerId;
   const isGuesser = r.guesser === myPlayerId;
   const cluePhase = d.phase === "clue";
@@ -437,10 +584,8 @@ function renderGame() {
   $("game-code").textContent = d.code;
   $("score").textContent = String(d.score);
   $("round-num").textContent = String(r.n);
-  $("round-group").textContent = String(collective ? (d.group ?? 1) : Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
-  $("round-info").textContent = collective
-    ? `${d.players[r.giver].name} placed the marker${r.giver === myPlayerId ? " — that's you" : ""}`
-    : `${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
+  $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
+  $("round-info").textContent = `${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
   $("spec-left").textContent = r.left;
   $("spec-right").textContent = r.right;
 
@@ -469,9 +614,7 @@ function renderGame() {
     setPos($("reveal-target"), r.target);
     $("reveal-clue-line").hidden = !r.clue;
     $("reveal-clue").textContent = r.clue;
-    $("reveal-delta").textContent = collective
-      ? `${d.players[r.giver].name} placed it at ${r.guess} — the game drew ${r.target}, off by ${Math.abs(r.target - r.guess)}`
-      : `Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`;
+    $("reveal-delta").textContent = `Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`;
     const pts = pointsFor(r.target, r.guess);
     $("reveal-points").textContent = pts > 0 ? `+${pts} points` : "+0 points";
   }
@@ -488,13 +631,14 @@ function renderGame() {
     $("guess-dial").hidden = !guessPhase;
   }
   $("reveal-panel").hidden = !revealPhase;
-  const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
-  $("btn-next").textContent = (collective ? r.n >= (d.setup ? setupQList(d.setup.q).length : qpr) : r.n % qpr === 0) ? "Finish round" : "Next question";
+  $("btn-next").textContent = (r.n % (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND) === 0) ? "Finish round" : "Next question";
 }
 
 $("btn-continue").addEventListener("click", async () => {
-  const n = roomData?.round?.n;
-  if (!n) return;
+  const d = roomData;
+  if (!d) return;
+  const n = d.round?.n ?? (d.collective ? 0 : null);
+  if (n == null) return;
   try {
     await continueTransaction(db, ref(), n);
   } catch (err) { alert("Failed: " + (err as Error).message); }
@@ -519,8 +663,7 @@ $("btn-next").addEventListener("click", async () => {
   const n = roomData?.round?.n;
   if (!n) return;
   try {
-    if (roomData?.collective) await nextCollectiveTransaction(db, ref(), n);
-    else await nextRoundTransaction(db, ref(), n);
+    await nextRoundTransaction(db, ref(), n);
   } catch (err) { alert("Failed: " + (err as Error).message); }
 });
 
@@ -545,28 +688,5 @@ dialBar.addEventListener("pointerdown", (e) => {
 dialBar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
 dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
-
-const collectBar = $("collect-bar");
-let collectDragging = false;
-const moveCollect = (e: PointerEvent) => {
-  const d = roomData;
-  if (!d || !myPlayerId || d.phase !== "setup" || !d.setup) return;
-  const { mine, ps } = mySetupList(d);
-  if (ps.cur >= mine.length || mine[ps.cur].it.by !== myPlayerId) return;
-  const rect = collectBar.getBoundingClientRect();
-  let x = e.clientX - rect.left;
-  x = Math.max(0, Math.min(rect.width, x));
-  draftCollect = (x / rect.width) * 100;
-  setPos($("collect-marker"), draftCollect);
-  $("collect-value").textContent = String(Math.round(draftCollect));
-};
-collectBar.addEventListener("pointerdown", (e) => {
-  collectDragging = true;
-  collectBar.setPointerCapture(e.pointerId);
-  moveCollect(e);
-});
-collectBar.addEventListener("pointermove", (e) => { if (collectDragging) moveCollect(e); });
-collectBar.addEventListener("pointerup", () => { collectDragging = false; });
-collectBar.addEventListener("pointercancel", () => { collectDragging = false; });
 
 show("home");

@@ -191,5 +191,5 @@ test("host can limit the game to chosen categories; every spectrum is from them"
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.6.0");
+  await expect(page.locator("#version")).toHaveText("1.7.0");
 });
