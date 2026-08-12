@@ -4,7 +4,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.10.0";
+const VERSION = "1.11.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -516,15 +516,16 @@ function renderGuess() {
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
   $("skip-wrap").hidden = true;
   const active = st.turn;
-  const { mine, theirs, partner } = mySet(d);
+  const { entries, mine, theirs, partner } = mySet(d);
   const list = $("collect-list");
   list.innerHTML = "";
   $("collect-done").hidden = true;
   if (active === myPlayerId) {
     $("collect-title").textContent = "Your turn — guess the targets";
-    const cur = theirs.findIndex(([, it]) => it.answer == null);
-    const done = theirs.filter(([, it]) => it.answer != null).length;
-    if (cur !== -1) {
+    const nextGlobal = entries.find(([, it]) => it.answer == null);
+    const guesser = nextGlobal ? Object.keys(d.players).find((p) => p !== nextGlobal[1].by)! : null;
+    if (nextGlobal && guesser === myPlayerId) {
+      const cur = theirs.findIndex(([, it]) => it.answer == null);
       const [key, it] = theirs[cur];
       $("collect-progress").textContent = `Guessing ${cur + 1} of ${theirs.length}`;
       const c = card();
@@ -561,12 +562,10 @@ function renderGuess() {
       c.append(actions);
       list.append(c);
     } else {
-      $("collect-progress").textContent = theirs.length ? `Guessing ${theirs.length} of ${theirs.length} — turn complete` : "Nothing to guess on your side";
+      $("collect-progress").textContent = allGuessesDone(d)
+        ? "All guesses are in — opening the review…"
+        : `Turn complete — passing to ${partner?.name ?? "the other player"}…`;
     }
-    $("collect-done").hidden = false;
-    if (allGuessesDone(d)) $("collect-done").textContent = "All guesses are in — opening the review…";
-    else if (done >= theirs.length && theirs.length > 0) $("collect-done").textContent = `Turn complete — passing to ${partner?.name ?? "the other player"}…`;
-    else $("collect-done").hidden = true;
   } else {
     $("collect-title").textContent = `Waiting for ${d.players[active]?.name ?? "the other player"}…`;
     $("collect-progress").textContent = "";

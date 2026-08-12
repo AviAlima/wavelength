@@ -68,6 +68,9 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
 
     await lockGuess(host, 350);
 
+    // no flicker — the locked player shows "turn complete" instead of their next question
+    await expect(host.locator("#collect-progress")).toHaveText("Turn complete — passing to Babi…", { timeout: 3000 });
+
     // guest's turn — one question
     await expect(guest.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
     await expect(guest.locator("#collect-progress")).toHaveText("Guessing 1 of 1");
