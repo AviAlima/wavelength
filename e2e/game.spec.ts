@@ -213,5 +213,5 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.12.0");
+  await expect(page.locator("#version")).toHaveText("1.13.0");
 });

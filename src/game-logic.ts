@@ -42,6 +42,7 @@ export interface SetupItem {
   by: string;
   clue: string;
   answer: number | null;
+  answerAt?: number;
   skipped: boolean;
 }
 

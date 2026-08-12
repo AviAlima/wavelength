@@ -68,8 +68,11 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
 
     await lockGuess(host, 350);
 
-    // no flicker — the locked player shows "turn complete" instead of their next question
-    await expect(host.locator("#collect-progress")).toHaveText("Turn complete — passing to Babi…", { timeout: 3000 });
+    // both sides immediately see whether the guess landed
+    await expect(host.locator("#collect-title")).toHaveText("How did you do?", { timeout: 5000 });
+    await expect(host.locator("#collect-list .q-card .q-pts")).toContainText(/You guessed \d+ — target was \d+ → \+?\d+ pts/);
+    await expect(guest.locator("#collect-title")).toHaveText("How did you do?");
+    await expect(guest.locator("#collect-list .q-card .q-pts")).toContainText(/Avi guessed \d+ — target was \d+ → \+?\d+ pts/);
 
     // guest's turn — one question
     await expect(guest.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });

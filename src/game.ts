@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.12.0";
+const VERSION = "1.13.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -276,17 +276,33 @@ function render() {
   if (roomData.collective && roomData.phase === "guess" && roomData.setup) {
     const t = roomData.setup.turn;
     if (t !== lastTurn) { lastTurn = t; guessTurnFired = false; }
-    if (turnTargetsDone(roomData) && !guessTurnFired) {
+    if (turnTargetsDone(roomData) && revealElapsed(roomData) && !guessTurnFired) {
       guessTurnFired = true;
-      setTimeout(() => {
-        if (roomData?.phase !== "guess") { guessTurnFired = false; return; }
-        guessTurnTransaction(db, ref()).then((ok) => {
-          if (!ok) guessTurnFired = false;
-        }).catch((err) => { guessTurnFired = false; alert("Failed to switch turn: " + (err as Error).message); });
-      }, 1200);
+      guessTurnTransaction(db, ref()).then((ok) => {
+        if (!ok) guessTurnFired = false;
+      }).catch((err) => { guessTurnFired = false; alert("Failed to switch turn: " + (err as Error).message); });
     }
   }
 }
+
+const REVEAL_MS = 4000;
+
+const latestAnswer = (d: RoomData): { key: string; it: SetupItem } | null => {
+  const st = d.setup;
+  if (!st) return null;
+  let best: [string, SetupItem] | null = null;
+  for (const entry of Object.entries(st.q)) {
+    const it = entry[1];
+    if (it.answer != null && it.answerAt && (!best || it.answerAt > best[1].answerAt!)) best = entry;
+  }
+  return best ? { key: best[0], it: best[1] } : null;
+};
+
+const revealElapsed = (d: RoomData): boolean => {
+  const latest = latestAnswer(d);
+  if (!latest) return true;
+  return Date.now() - latest.it.answerAt! >= REVEAL_MS;
+};
 
 const turnTargetsDone = (d: RoomData): boolean => {
   const st = d.setup;
@@ -530,81 +546,95 @@ function renderGuess() {
   $("collect-score").textContent = String(d.score);
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
   $("skip-wrap").hidden = true;
-  const active = st.turn;
-  const { entries, mine, theirs, partner } = mySet(d);
   const list = $("collect-list");
   list.innerHTML = "";
   $("collect-done").hidden = true;
-  if (active === myPlayerId) {
+  const { entries, theirs } = mySet(d);
+  const latest = latestAnswer(d);
+  if (latest && Date.now() - latest.it.answerAt! < REVEAL_MS) {
+    $("collect-title").textContent = "How did you do?";
+    $("collect-progress").textContent = "Next question in a moment…";
+    const it = latest.it;
+    const c = card();
+    specLabels(c, it.left, it.right);
+    clueBox(c, it.clue);
+    revealDial(c, it.target, it.answer ?? 50);
+    const guesser = Object.keys(d.players).find((p) => p !== it.by)!;
+    const who = guesser === myPlayerId ? "You" : d.players[guesser]?.name ?? "They";
+    const pts = document.createElement("p");
+    pts.className = "q-pts";
+    const p = pointsFor(it.target, it.answer ?? 50);
+    pts.textContent = `${who} guessed ${it.answer} — target was ${it.target} → +${p} pts`;
+    c.append(pts);
+    list.append(c);
+    return;
+  }
+  const nextGlobal = entries.find(([, it]) => it.answer == null);
+  if (!nextGlobal) {
+    $("collect-title").textContent = "All guesses are in";
+    $("collect-progress").textContent = "All guesses are in — opening the review…";
+    return;
+  }
+  const guesser = Object.keys(d.players).find((p) => p !== nextGlobal[1].by)!;
+  if (guesser === myPlayerId) {
     $("collect-title").textContent = "Your turn — guess the targets";
-    const nextGlobal = entries.find(([, it]) => it.answer == null);
-    const guesser = nextGlobal ? Object.keys(d.players).find((p) => p !== nextGlobal[1].by)! : null;
-    if (nextGlobal && guesser === myPlayerId) {
-      const cur = theirs.findIndex(([, it]) => it.answer == null);
-      const [key, it] = theirs[cur];
-      $("collect-progress").textContent = `Guessing ${cur + 1} of ${theirs.length}`;
-      const c = card();
-      specLabels(c, it.left, it.right);
-      clueBox(c, it.clue);
-      const { bar, marker } = miniDial(c, "arrow", draftGuesses[key] ?? 50);
-      const val = document.createElement("p");
-      val.className = "hint";
-      val.textContent = `Your guess: ${Math.round(draftGuesses[key] ?? 50)}`;
-      c.append(val);
-      let dragging = false;
-      const move = (e: PointerEvent) => {
-        const rect = bar.getBoundingClientRect();
-        let x = e.clientX - rect.left;
-        x = Math.max(0, Math.min(rect.width, x));
-        draftGuesses[key] = (x / rect.width) * 100;
-        marker.style.left = `${draftGuesses[key]}%`;
-        val.textContent = `Your guess: ${Math.round(draftGuesses[key])}`;
-      };
-      bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); move(e); });
-      bar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
-      bar.addEventListener("pointerup", () => { dragging = false; });
-      bar.addEventListener("pointercancel", () => { dragging = false; });
-      const actions = document.createElement("div");
-      actions.className = "card-actions";
-      const lock = document.createElement("button");
-      lock.className = "btn primary";
-      lock.textContent = "Lock guess";
-      lock.addEventListener("click", async () => {
-        try { await updateDoc(ref(), { [`setup.q.${key}.answer`]: Math.round(draftGuesses[key] ?? 50) }); }
-        catch (e) { alert("Failed: " + (e as Error).message); }
-      });
-      actions.append(lock);
-      c.append(actions);
-      list.append(c);
-    } else {
-      $("collect-progress").textContent = allGuessesDone(d)
-        ? "All guesses are in — opening the review…"
-        : `Turn complete — passing to ${partner?.name ?? "the other player"}…`;
-    }
+    const cur = theirs.findIndex(([, it]) => it.answer == null);
+    const [key, it] = theirs[cur];
+    $("collect-progress").textContent = `Guessing ${cur + 1} of ${theirs.length}`;
+    const c = card();
+    specLabels(c, it.left, it.right);
+    clueBox(c, it.clue);
+    const { bar, marker } = miniDial(c, "arrow", draftGuesses[key] ?? 50);
+    const val = document.createElement("p");
+    val.className = "hint";
+    val.textContent = `Your guess: ${Math.round(draftGuesses[key] ?? 50)}`;
+    c.append(val);
+    let dragging = false;
+    const move = (e: PointerEvent) => {
+      const rect = bar.getBoundingClientRect();
+      let x = e.clientX - rect.left;
+      x = Math.max(0, Math.min(rect.width, x));
+      draftGuesses[key] = (x / rect.width) * 100;
+      marker.style.left = `${draftGuesses[key]}%`;
+      val.textContent = `Your guess: ${Math.round(draftGuesses[key])}`;
+    };
+    bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); move(e); });
+    bar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
+    bar.addEventListener("pointerup", () => { dragging = false; });
+    bar.addEventListener("pointercancel", () => { dragging = false; });
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const lock = document.createElement("button");
+    lock.className = "btn primary";
+    lock.textContent = "Lock guess";
+    lock.addEventListener("click", async () => {
+      try { await updateDoc(ref(), { [`setup.q.${key}.answer`]: Math.round(draftGuesses[key] ?? 50), [`setup.q.${key}.answerAt`]: Date.now() }); }
+      catch (e) { alert("Failed: " + (e as Error).message); }
+    });
+    actions.append(lock);
+    c.append(actions);
+    list.append(c);
   } else {
-    $("collect-title").textContent = `Waiting for ${d.players[active]?.name ?? "the other player"}…`;
+    $("collect-title").textContent = `Waiting for ${d.players[guesser]?.name ?? "the other player"}…`;
     $("collect-progress").textContent = "";
-    const cur = mine.findIndex(([, it]) => it.answer == null);
     const c = card();
     c.classList.add("waiting-card");
     const title = document.createElement("p");
     title.className = "hint";
     title.id = "waiting-title";
-    title.textContent = `${d.players[active]?.name ?? "The other player"} is answering…`;
+    title.textContent = `${d.players[guesser]?.name ?? "The other player"} is answering…`;
     c.append(title);
     const dots = document.createElement("div");
     dots.className = "waiting-dots";
     dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
     c.append(dots);
-    const it = cur !== -1 ? mine[cur]?.[1] : undefined;
-    if (it) {
-      specLabels(c, it.left, it.right);
-      clueBox(c, it.clue);
-      const hint = document.createElement("p");
-      hint.className = "hint small-hint";
-      hint.textContent = "Your turn comes right after.";
-      c.append(hint);
-    }
+    const it = nextGlobal[1];
+    specLabels(c, it.left, it.right);
+    clueBox(c, it.clue);
+    const hint = document.createElement("p");
+    hint.className = "hint small-hint";
+    hint.textContent = "Your turn comes right after.";
+    c.append(hint);
     list.append(c);
   }
 }
@@ -790,5 +820,10 @@ dialBar.addEventListener("pointerdown", (e) => {
 dialBar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
 dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
+
+setInterval(() => {
+  if (!roomData) return;
+  if (roomData.phase === "reveal" || (roomData.collective && roomData.phase === "guess")) render();
+}, 300);
 
 show("home");
