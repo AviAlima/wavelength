@@ -4,7 +4,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, allGuessesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.11.0";
+const VERSION = "1.12.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -219,9 +219,24 @@ $("btn-copy").addEventListener("click", async () => {
 $("btn-create").addEventListener("click", showCatScreen);
 ($("join-input") as HTMLInputElement).addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
 $("btn-join").addEventListener("click", joinRoom);
-$("btn-leave").addEventListener("click", leaveRoom);
-$("btn-leave-game").addEventListener("click", leaveRoom);
-$("btn-end").addEventListener("click", leaveRoom);
+
+const confirmLeave = () => {
+  if (!roomCode) return;
+  if (roomData?.phase === "lobby") {
+    $("leave-confirm-text").textContent = "You'll leave the party and it will close for everyone.";
+  } else {
+    $("leave-confirm-text").textContent = "Your spot will be freed and the party will close for everyone.";
+  }
+  $("leave-confirm").hidden = false;
+};
+$("btn-leave").addEventListener("click", confirmLeave);
+$("btn-leave-game").addEventListener("click", confirmLeave);
+$("btn-end").addEventListener("click", confirmLeave);
+$("btn-stay").addEventListener("click", () => { $("leave-confirm").hidden = true; });
+$("btn-confirm-leave").addEventListener("click", () => {
+  $("leave-confirm").hidden = true;
+  leaveRoom();
+});
 
 ($("qpr-input") as HTMLInputElement).addEventListener("change", async () => {
   const inp = $("qpr-input") as HTMLInputElement;
@@ -655,7 +670,7 @@ function renderReveal() {
   $("collect-done").hidden = true;
 }
 
-$("btn-leave-collect").addEventListener("click", leaveRoom);
+$("btn-leave-collect").addEventListener("click", confirmLeave);
 
 function renderGame() {
   show("game");

@@ -189,7 +189,29 @@ test("host can limit the game to chosen categories; every spectrum is from them"
   }
 });
 
+test("leave buttons ask for confirmation before leaving", async ({ page }) => {
+  await openHome(page, "Avi");
+  const code = await createRoom(page);
+  try {
+    await expect(page.locator("#screen-lobby")).toBeVisible();
+
+    await page.click("#btn-leave");
+    await expect(page.locator("#leave-confirm")).toBeVisible();
+    await page.click("#btn-stay");
+    await expect(page.locator("#leave-confirm")).toBeHidden();
+    await expect(page.locator("#screen-lobby")).toBeVisible();
+
+    await page.click("#btn-leave");
+    await expect(page.locator("#leave-confirm")).toBeVisible();
+    await page.click("#btn-confirm-leave");
+    await expect(page.locator("#leave-confirm")).toBeHidden();
+    await expect(page.locator("#screen-home")).toBeVisible();
+  } finally {
+    await deleteRoom(code);
+  }
+});
+
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.11.0");
+  await expect(page.locator("#version")).toHaveText("1.12.0");
 });
