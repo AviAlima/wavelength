@@ -137,7 +137,7 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
   }
 });
 
-test("each player can skip two spectra; skipped spectra are dropped", async ({ browser }) => {
+test("skipping a spectrum deals a fresh one in its place — the question count is preserved", async ({ browser }) => {
   const ctxHost = await browser.newContext();
   const ctxGuest = await browser.newContext();
   const host = await ctxHost.newPage();
@@ -156,27 +156,61 @@ test("each player can skip two spectra; skipped spectra are dropped", async ({ b
     await host.click("#btn-start");
     await expect(host.locator("#screen-collect")).toBeVisible();
 
+    // host skips their only spectrum — a fresh one arrives instead of dropping it
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(2);
+    const labelsBefore = await host.locator("#collect-list .q-card .spec-labels").innerText();
     await host.locator("#collect-list .q-card button.btn:not(.primary)").click();
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(1);
-    await expect(host.locator("#collect-progress")).toHaveText("You skipped all of yours");
+    await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
+    await expect(host.locator("#collect-list .q-card .spec-labels")).not.toHaveText(labelsBefore);
+    await sendClue(host, "sunny");
     await expect(host.locator("#collect-done")).toContainText(/waiting for Babi/i);
 
+    // guest skips twice — each time the spectrum is replaced, still 2 to answer
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await guest.locator("#collect-list .q-card button.btn:not(.primary)").click();
-    await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
+    await expect(guest.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(1);
+    await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await guest.locator("#collect-list .q-card button.btn:not(.primary)").click();
-    await expect(guest.locator("#collect-progress")).toHaveText("You skipped all of yours");
+    await expect(guest.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(0);
+    await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
+    await sendClue(guest, "spicy");
+    await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 2 of 2 — write a clue");
+    await sendClue(guest, "hot");
 
-    // every spectrum skipped — review has nothing to show
+    // all 3 questions still get played and scored
+    await expect(host.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(host.locator("#collect-progress")).toHaveText("Guessing 1 of 2");
+    await lockGuess(host, 350);
+    await expect(guest.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(guest.locator("#collect-progress")).toHaveText("Guessing 1 of 1");
+    await lockGuess(guest, 200);
+    await expect(host.locator("#collect-title")).toHaveText("Your turn — guess the targets", { timeout: 15000 });
+    await expect(host.locator("#collect-progress")).toHaveText("Guessing 2 of 2");
+    await lockGuess(host, 400);
+
+    // review covers all 3 — skipping replaced, never dropped
     await expect(host.locator("#collect-title")).toHaveText("Review — how close were you?", { timeout: 15000 });
-    await expect(host.locator("#collect-progress")).toHaveText("No questions this round");
-    await expect(host.getByRole("button", { name: "See results" })).toBeVisible();
-    await host.getByRole("button", { name: "See results" }).click();
+    await expect(host.locator("#collect-progress")).toHaveText("Review 1 of 3");
+    await host.getByRole("button", { name: "Next" }).click();
+    await expect(host.locator("#collect-progress")).toHaveText("Review 2 of 3");
+    await host.getByRole("button", { name: "Next" }).click();
+    await expect(host.locator("#collect-progress")).toHaveText("Review 3 of 3");
+    await host.getByRole("button", { name: "Finish review" }).click();
 
     await expect(host.locator("#screen-summary")).toBeVisible({ timeout: 15000 });
-    await expect(host.locator("#summary-round")).toContainText("0 questions played");
-    await expect(host.locator("#summary-total")).toContainText("Total score: 0");
+    await expect(host.locator("#summary-round")).toContainText("3 questions played");
+
+    const room = (await (await fetch(roomUrl(code))).json()).fields;
+    const items = Object.values(room.setup.mapValue.fields.q.mapValue.fields) as Record<string, string>[];
+    let expected = 0;
+    for (const it of items) {
+      const f = it.mapValue.fields;
+      expected += pointsFor(num(f.target), num(f.answer));
+    }
+    const dbScore = Number(room.score.integerValue ?? room.score.doubleValue);
+    expect(dbScore).toBe(expected);
+    await expect(host.locator("#summary-total")).toContainText("Total score: " + expected);
   } finally {
     for (const c of codes) await deleteRoom(c);
     await ctxHost.close();

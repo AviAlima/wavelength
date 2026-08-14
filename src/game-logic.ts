@@ -36,6 +36,7 @@ export interface RoomData {
 }
 
 export interface SetupItem {
+  idx: number;
   left: string;
   right: string;
   target: number;
@@ -78,7 +79,7 @@ const dealItems = (qpr: number, used: number[], categories: string[] | undefined
     const pick = pickSpectrumIndex(u, poolFor(categories));
     u = pick.used;
     const sp = SPECTRA[pick.idx];
-    q.push({ left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? firstId : secondId, clue: "", answer: null, skipped: false });
+    q.push({ idx: pick.idx, left: sp.left, right: sp.right, target: randomTarget(), by: i % 2 === 0 ? firstId : secondId, clue: "", answer: null, skipped: false });
   }
   return { q, used: u };
 };
@@ -170,9 +171,16 @@ export const skipSetupTransaction = async (
     const ps = data.setup.byPlayer[pid];
     const item = data.setup.q[key];
     if (!ps || ps.skips <= 0 || !item || item.by !== pid) return false;
+    const used = new Set(data.usedSpectra ?? []);
+    setupQList(data.setup.q).forEach((it) => used.add(it.idx));
+    const pick = pickSpectrumIndex([...used], poolFor(data.categories));
+    const sp = SPECTRA[pick.idx];
+    const fresh = { ...item, idx: pick.idx, left: sp.left, right: sp.right, target: randomTarget(), clue: "", answer: null };
+    delete fresh.answerAt;
     tx.update(roomRef, {
-      [`setup.q.${key}`]: deleteField(),
+      [`setup.q.${key}`]: fresh,
       [`setup.byPlayer.${pid}.skips`]: ps.skips - 1,
+      usedSpectra: pick.used,
     });
     return true;
   });
