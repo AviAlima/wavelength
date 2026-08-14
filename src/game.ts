@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.13.0";
+const VERSION = "1.14.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -462,6 +462,22 @@ const mySet = (d: RoomData) => {
   return { st, entries, mine, theirs, partner };
 };
 
+const chipScore = (d: RoomData): string => {
+  const banked = d.score;
+  if (d.setup && setupQList(d.setup.q).length > 0) {
+    const pending = setupQList(d.setup.q).reduce(
+      (s, it) => (it.answer != null ? s + pointsFor(it.target, it.answer) : s),
+      0,
+    );
+    return pending > 0 ? `${banked} (+${pending})` : String(banked);
+  }
+  if (d.round && d.round.guess != null) {
+    const p = pointsFor(d.round.target, d.round.guess);
+    return p > 0 ? `${banked} (+${p})` : String(banked);
+  }
+  return String(banked);
+};
+
 function renderCollect() {
   if (!roomData || !myPlayerId) return;
   const d = roomData;
@@ -469,7 +485,7 @@ function renderCollect() {
   if (!st) return;
   show("collect");
   $("collect-code").textContent = d.code;
-  $("collect-score").textContent = String(d.score);
+  $("collect-score").textContent = chipScore(d);
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
   $("collect-title").textContent = "Your spectra — write a clue";
   const { mine, partner } = mySet(d);
@@ -543,9 +559,10 @@ function renderGuess() {
   if (!st) return;
   show("collect");
   $("collect-code").textContent = d.code;
-  $("collect-score").textContent = String(d.score);
+  $("collect-score").textContent = chipScore(d);
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
   $("skip-wrap").hidden = true;
+  if (dragging) return;
   const list = $("collect-list");
   list.innerHTML = "";
   $("collect-done").hidden = true;
@@ -589,7 +606,6 @@ function renderGuess() {
     val.className = "hint";
     val.textContent = `Your guess: ${Math.round(draftGuesses[key] ?? 50)}`;
     c.append(val);
-    let dragging = false;
     const move = (e: PointerEvent) => {
       const rect = bar.getBoundingClientRect();
       let x = e.clientX - rect.left;
@@ -600,8 +616,8 @@ function renderGuess() {
     };
     bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); move(e); });
     bar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
-    bar.addEventListener("pointerup", () => { dragging = false; });
-    bar.addEventListener("pointercancel", () => { dragging = false; });
+    bar.addEventListener("pointerup", () => { dragging = false; render(); });
+    bar.addEventListener("pointercancel", () => { dragging = false; render(); });
     const actions = document.createElement("div");
     actions.className = "card-actions";
     const lock = document.createElement("button");
@@ -646,7 +662,7 @@ function renderReveal() {
   if (!st) return;
   show("collect");
   $("collect-code").textContent = d.code;
-  $("collect-score").textContent = String(d.score);
+  $("collect-score").textContent = chipScore(d);
   $("collect-round").textContent = `Round ${d.group ?? 1}`;
   $("collect-title").textContent = "Review — how close were you?";
   $("skip-wrap").hidden = true;
@@ -714,7 +730,7 @@ function renderGame() {
   const revealPhase = d.phase === "reveal";
 
   $("game-code").textContent = d.code;
-  $("score").textContent = String(d.score);
+  $("score").textContent = chipScore(d);
   $("round-num").textContent = String(r.n);
   $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
   $("round-info").textContent = `${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
@@ -822,7 +838,7 @@ dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
 
 setInterval(() => {
-  if (!roomData) return;
+  if (!roomData || dragging) return;
   if (roomData.phase === "reveal" || (roomData.collective && roomData.phase === "guess")) render();
 }, 300);
 
