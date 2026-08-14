@@ -4,7 +4,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
 
-const VERSION = "1.15.0";
+const VERSION = "1.16.0";
 document.getElementById("version")!.textContent = VERSION;
 
 const app = initializeApp(firebaseConfig);
@@ -837,8 +837,14 @@ dialBar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
 dialBar.addEventListener("pointerup", () => { dragging = false; });
 dialBar.addEventListener("pointercancel", () => { dragging = false; });
 
+let interacting = false;
+window.addEventListener("pointerdown", () => { interacting = true; });
+window.addEventListener("pointerup", () => { interacting = false; });
+window.addEventListener("pointercancel", () => { interacting = false; });
+window.addEventListener("blur", () => { interacting = false; });
+
 setInterval(() => {
-  if (!roomData || dragging) return;
+  if (!roomData || interacting) return;
   if (roomData.phase === "reveal" || (roomData.collective && roomData.phase === "guess")) render();
 }, 300);
 
