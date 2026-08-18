@@ -1,6 +1,19 @@
 import { test, expect } from "@playwright/test";
 import { createRoom, joinRoom, deleteRoom, openHome } from "./helpers";
 
+test("Hebrew is the default language; toggle switches to English", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#btn-create")).toHaveText("צור משחק");
+  await expect(page.locator("#btn-join")).toHaveText("הצטרף למשחק");
+  await expect(page.locator(".lang-btn.active")).toHaveText("עברית");
+  await page.locator("#lang-en").click();
+  await expect(page.locator("#btn-create")).toHaveText("Create a party");
+  await expect(page.locator("#btn-join")).toHaveText("Join party");
+  await expect(page.locator(".lang-btn.active")).toHaveText("English");
+  await page.locator("#lang-he").click();
+  await expect(page.locator("#btn-create")).toHaveText("צור משחק");
+});
+
 test("two separate devices join as two players; host starts, guest waits", async ({ browser }) => {
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();
@@ -75,6 +88,7 @@ test("name is required for both joining and creating", async ({ browser }) => {
     codes.push(code);
 
     await guest.goto("/");
+    await guest.locator("#lang-en").click();
     await guest.click("#btn-create");
     await expect(guest.locator("#nick-error")).toBeVisible();
     await expect(guest.locator("#screen-cats")).toBeHidden();

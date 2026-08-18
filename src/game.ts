@@ -2,15 +2,34 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
-import { CATEGORIES, SPECTRA_BY_CATEGORY } from "./spectra.js";
+import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
+import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.16.0";
+const VERSION = "1.17.0";
 document.getElementById("version")!.textContent = VERSION;
+
+applyStaticLang();
 
 const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
+
+const langBtn = (id: string) => $(id) as HTMLButtonElement;
+const syncLangBtns = () => {
+  langBtn("lang-he").classList.toggle("active", getLang() === "he");
+  langBtn("lang-en").classList.toggle("active", getLang() === "en");
+};
+syncLangBtns();
+langBtn("lang-he").addEventListener("click", () => { setLang("he"); afterLangChange(); });
+langBtn("lang-en").addEventListener("click", () => { setLang("en"); afterLangChange(); });
+
+const afterLangChange = () => {
+  applyStaticLang();
+  syncLangBtns();
+  if (catListBuilt) buildCatList();
+  if (roomData) render();
+};
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const makeCode = () => {
@@ -68,14 +87,13 @@ const requireName = (): boolean => {
 
 const myName = () => nickInput.value.trim();
 
+const catLabel = (c: string): string => (getLang() === "he" ? CATEGORY_HE[c] ?? c : c);
+
 let catListBuilt = false;
 
-function showCatScreen() {
-  if (!requireName()) return;
-  show("cats");
-  if (catListBuilt) return;
-  catListBuilt = true;
+function buildCatList() {
   const list = $("cat-list");
+  list.innerHTML = "";
   CATEGORIES.forEach((c) => {
     const n = SPECTRA_BY_CATEGORY[c].length;
     const label = document.createElement("label");
@@ -84,9 +102,17 @@ function showCatScreen() {
     cb.type = "checkbox";
     cb.value = c;
     cb.checked = true;
-    label.append(cb, document.createTextNode(`${c} (${n})`));
+    label.append(cb, document.createTextNode(`${catLabel(c)} (${n})`));
     list.append(label);
   });
+}
+
+function showCatScreen() {
+  if (!requireName()) return;
+  show("cats");
+  if (catListBuilt) return;
+  catListBuilt = true;
+  buildCatList();
 }
 
 $("btn-create").addEventListener("click", showCatScreen);
@@ -117,7 +143,7 @@ async function createRoom(categories: string[]) {
     });
     openRoom(code);
   } catch (err) {
-    alert("Could not create room. Did you paste your Firebase config in src/firebase-config.ts? " + (err as Error).message);
+    alert(t("Could not create room. Did you paste your Firebase config in src/firebase-config.ts? ", "לא הצלחנו ליצור חדר. הדבקתם את קונפיג הפיירבייס ב-src/firebase-config.ts? ") + (err as Error).message);
   }
 }
 
@@ -127,19 +153,19 @@ async function joinRoom() {
   if (!code) return;
   try {
     const snap = await getDoc(doc(db, "rooms", code));
-    if (!snap.exists()) { alert("Room not found"); return; }
+    if (!snap.exists()) { alert(t("Room not found", "החדר לא נמצא")); return; }
     const data = snap.data() as RoomData;
     const pids = Object.keys(data.players);
     if (data.phase !== "lobby") {
       if (myPlayerId && pids.includes(myPlayerId)) { openRoom(code); return; }
-      alert("The game already started");
+      alert(t("The game already started", "המשחק כבר התחיל"));
       return;
     }
     if (myPlayerId && pids.includes(myPlayerId)) {
       openRoom(code);
       return;
     }
-    if (pids.length >= 2) { alert("Room is full"); return; }
+    if (pids.length >= 2) { alert(t("Room is full", "החדר מלא")); return; }
     const id = freshId();
     sessionStorage.setItem("wave_player_id", id);
     myPlayerId = id;
@@ -147,7 +173,7 @@ async function joinRoom() {
       [`players.${id}`]: { id, name: myName(), color: COLORS[pids.length] },
     });
     openRoom(code);
-  } catch (err) { alert("Could not join: " + (err as Error).message); }
+  } catch (err) { alert(t("Could not join: ", "לא הצלחנו להצטרף: ") + (err as Error).message); }
 }
 
 function openRoom(code: string) {
@@ -155,7 +181,7 @@ function openRoom(code: string) {
   if (unsub) unsub();
   unsub = onSnapshot(doc(db, "rooms", code), { includeMetadataChanges: true }, (snap) => {
     if (!snap.exists()) {
-      alert("The party was closed by the other player");
+      alert(t("The party was closed by the other player", "המשחק נסגר על ידי השחקן השני"));
       leaveRoom();
       return;
     }
@@ -213,7 +239,7 @@ async function leaveRoom() {
 $("btn-copy").addEventListener("click", async () => {
   if (!roomData) return;
   try { await navigator.clipboard.writeText(roomData.code); }
-  catch { prompt("Party code:", roomData.code); }
+  catch { prompt(t("Party code:", "קוד משחק:"), roomData.code); }
 });
 
 $("btn-create").addEventListener("click", showCatScreen);
@@ -223,9 +249,9 @@ $("btn-join").addEventListener("click", joinRoom);
 const confirmLeave = () => {
   if (!roomCode) return;
   if (roomData?.phase === "lobby") {
-    $("leave-confirm-text").textContent = "You'll leave the party and it will close for everyone.";
+    $("leave-confirm-text").textContent = t("You'll leave the party and it will close for everyone.", "אם תעזוב המשחק ייסגר לכולם.");
   } else {
-    $("leave-confirm-text").textContent = "Your spot will be freed and the party will close for everyone.";
+    $("leave-confirm-text").textContent = t("Your spot will be freed and the party will close for everyone.", "המקום שלך יתפנה והמשחק ייסגר לכולם.");
   }
   $("leave-confirm").hidden = false;
 };
@@ -245,13 +271,13 @@ $("btn-confirm-leave").addEventListener("click", () => {
   v = Math.max(1, Math.min(20, v));
   inp.value = String(v);
   if (!roomCode) return;
-  try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert("Failed: " + (e as Error).message); }
+  try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
 });
 
 ($("collective-toggle") as HTMLInputElement).addEventListener("change", async () => {
   if (!roomCode) return;
   const v = ($("collective-toggle") as HTMLInputElement).checked;
-  try { await updateDoc(ref(), { collective: v }); } catch (e) { alert("Failed: " + (e as Error).message); }
+  try { await updateDoc(ref(), { collective: v }); } catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
 });
 
 /* ---------- render ---------- */
@@ -270,17 +296,17 @@ function render() {
       if (roomData?.phase !== "setup") { setupDoneFired = false; return; }
       setupDoneTransaction(db, ref()).then((ok) => {
         if (!ok) setupDoneFired = false;
-      }).catch((err) => { setupDoneFired = false; alert("Failed to start the guessing stage: " + (err as Error).message); });
+      }).catch((err) => { setupDoneFired = false; alert(t("Failed to start the guessing stage: ", "שגיאה בשלב הניחושים: ") + (err as Error).message); });
     }, 1500);
   }
   if (roomData.collective && roomData.phase === "guess" && roomData.setup) {
-    const t = roomData.setup.turn;
-    if (t !== lastTurn) { lastTurn = t; guessTurnFired = false; }
+    const turn = roomData.setup.turn;
+    if (turn !== lastTurn) { lastTurn = turn; guessTurnFired = false; }
     if (turnTargetsDone(roomData) && revealElapsed(roomData) && !guessTurnFired) {
       guessTurnFired = true;
       guessTurnTransaction(db, ref()).then((ok) => {
         if (!ok) guessTurnFired = false;
-      }).catch((err) => { guessTurnFired = false; alert("Failed to switch turn: " + (err as Error).message); });
+      }).catch((err) => { guessTurnFired = false; alert(t("Failed to switch turn: ", "שגיאה במעבר תור: ") + (err as Error).message); });
     }
   }
 }
@@ -325,7 +351,7 @@ function renderLobby() {
     const dot = document.createElement("span");
     dot.className = "dot";
     dot.style.background = p.color;
-    row.append(dot, document.createTextNode(`${p.name}${p.id === myPlayerId ? " (you)" : ""}`));
+    row.append(dot, document.createTextNode(`${p.name}${p.id === myPlayerId ? t(" (you)", " (אתה)") : ""}`));
     list.append(row);
   });
   const n = Object.values(roomData!.players).length;
@@ -334,7 +360,7 @@ function renderLobby() {
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
   start.disabled = n < 2;
-  start.textContent = n < 2 ? `Start game (${n}/2 players)` : "Start game";
+  start.textContent = n < 2 ? t(`Start game (${n}/2 players)`, `התחל משחק (${n}/2 שחקנים)`) : t("Start game", "התחל משחק");
   $("lobby-waiting").hidden = n >= 2;
   $("lobby-note").hidden = isHost || n < 2;
   const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
@@ -346,20 +372,24 @@ function renderLobby() {
   } else {
     $("qpr-wrap").hidden = true;
     $("lobby-qpr").hidden = false;
-    $("lobby-qpr").textContent = `Questions per round: ${qpr}`;
+    $("lobby-qpr").textContent = t(`Questions per round: ${qpr}`, `שאלות בסיבוב: ${qpr}`);
   }
   const cats = roomData!.categories?.length ? roomData!.categories : null;
-  $("lobby-cats").textContent = cats ? `Spectra: ${cats.join(", ")}` : "Spectra: random (all categories)";
+  $("lobby-cats").textContent = cats
+    ? t(`Spectra: ${cats.join(", ")}`, `ספקטרומים: ${cats.map(catLabel).join(", ")}`)
+    : t("Spectra: random (all categories)", "ספקטרומים: אקראי (כל הקטגוריות)");
   const collective = roomData!.collective ?? true;
   if (isHost) {
-    const t = $("collective-toggle") as HTMLInputElement;
-    if (document.activeElement !== t) t.checked = collective;
+    const toggle = $("collective-toggle") as HTMLInputElement;
+    if (document.activeElement !== toggle) toggle.checked = collective;
     $("collective-wrap").hidden = false;
     $("lobby-collective").hidden = true;
   } else {
     $("collective-wrap").hidden = true;
     $("lobby-collective").hidden = false;
-    $("lobby-collective").textContent = `Answering: ${collective ? "all spectra up front — each player sees the secret target and writes clues, then you guess each other's targets" : "one question at a time"}`;
+    $("lobby-collective").textContent = collective
+      ? t("Answering: all spectra up front — each player sees the secret target and writes clues, then you guess each other's targets", "מענה: כל הספקטרומים מראש — כל שחקן רואה את המטרה הסודית וכותב רמזים, ואז מנחשים זה את המטרות של זה")
+      : t("Answering: one question at a time", "מענה: שאלה אחת בכל פעם");
   }
 }
 
@@ -369,9 +399,9 @@ function renderSummary() {
   const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
   const n = d.collective ? (d.setup ? Object.values(d.setup.q).length : 0) : (d.round?.n ?? 0);
   const group = d.collective ? (d.group ?? 1) : Math.max(1, Math.ceil(n / qpr));
-  $("summary-title").textContent = `Round ${group} complete!`;
-  $("summary-round").textContent = `${n} questions played, +${d.roundScore ?? 0} points this round`;
-  $("summary-total").textContent = `Total score: ${d.score}`;
+  $("summary-title").textContent = t(`Round ${group} complete!`, `סיבוב ${group} הסתיים!`);
+  $("summary-round").textContent = t(`${n} questions played, +${d.roundScore ?? 0} points this round`, `${n} שאלות הושלמו, +${d.roundScore ?? 0} נקודות בסיבוב הזה`);
+  $("summary-total").textContent = t(`Total score: ${d.score}`, `ניקוד כולל: ${d.score}`);
   const isHost = d.host === myPlayerId;
   $("btn-continue").hidden = !isHost;
   $("summary-wait").hidden = isHost;
@@ -384,7 +414,7 @@ $("btn-start").addEventListener("click", async () => {
   try {
     if (roomData.collective) await startCollectiveTransaction(db, ref());
     else await startGameTransaction(db, ref());
-  } catch (err) { alert("Failed to start: " + (err as Error).message); }
+  } catch (err) { alert(t("Failed to start: ", "שגיאה בהתחלה: ") + (err as Error).message); }
 });
 
 /* ---------- collective (up front) ---------- */
@@ -405,13 +435,13 @@ const card = () => {
   return c;
 };
 
-const specLabels = (c: HTMLElement, left: string, right: string) => {
+const specLabels = (c: HTMLElement, left: string, right: string, leftHe?: string, rightHe?: string) => {
   const labels = document.createElement("div");
   labels.className = "spec-labels";
   const l = document.createElement("span");
-  l.textContent = left;
+  l.textContent = langLabel(left, leftHe);
   const r = document.createElement("span");
-  r.textContent = right;
+  r.textContent = langLabel(right, rightHe);
   labels.append(l, r);
   c.append(labels);
 };
@@ -486,8 +516,8 @@ function renderCollect() {
   show("collect");
   $("collect-code").textContent = d.code;
   $("collect-score").textContent = chipScore(d);
-  $("collect-round").textContent = `Round ${d.group ?? 1}`;
-  $("collect-title").textContent = "Your spectra — write a clue";
+  $("collect-round").textContent = t(`Round ${d.group ?? 1}`, `סיבוב ${d.group ?? 1}`);
+  $("collect-title").textContent = t("Your spectra — write a clue", "הספקטרומים שלך — כתבו רמז");
   const { mine, partner } = mySet(d);
   const ps = st.byPlayer[myPlayerId!];
   const skips = ps?.skips ?? MAX_SKIPS;
@@ -498,26 +528,26 @@ function renderCollect() {
   list.innerHTML = "";
   if (cur !== -1) {
     const [key, it] = mine[cur];
-    $("collect-progress").textContent = `Spectrum ${cur + 1} of ${mine.length} — write a clue`;
+    $("collect-progress").textContent = t(`Spectrum ${cur + 1} of ${mine.length} — write a clue`, `ספקטרום ${cur + 1} מתוך ${mine.length} — כתבו רמז`);
     const c = card();
-    specLabels(c, it.left, it.right);
+    specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     const badge = document.createElement("span");
     badge.className = "badge";
-    badge.textContent = `Target: ${it.target}`;
+    badge.textContent = t(`Target: ${it.target}`, `מטרה: ${it.target}`);
     const p = document.createElement("p");
     p.className = "hint small-hint";
-    p.append(badge, " Give a clue that lands your partner near the target:");
+    p.append(badge, t(" Give a clue that lands your partner near the target:", " תנו רמז שינחית את השותף ליד המטרה:"));
     c.append(p);
     miniDial(c, "target", it.target);
     const input = document.createElement("input");
     input.maxLength = 60;
-    input.placeholder = "e.g. “Sunday morning”";
+    input.placeholder = t("e.g. “Sunday morning”", "למשל: “בוקר של יום ראשון”");
     input.value = draftClues[key] ?? it.clue;
     const actions = document.createElement("div");
     actions.className = "card-actions";
     const send = document.createElement("button");
     send.className = "btn primary";
-    send.textContent = "Send clue";
+    send.textContent = t("Send clue", "שלחו רמז");
     const syncSend = () => { send.disabled = !input.value.trim(); };
     input.addEventListener("input", () => {
       draftClues[key] = input.value;
@@ -527,28 +557,28 @@ function renderCollect() {
       const v = input.value.trim();
       if (!v) return;
       try { await updateDoc(ref(), { [`setup.q.${key}.clue`]: v }); }
-      catch (e) { alert("Failed: " + (e as Error).message); }
+      catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
     });
     actions.append(send);
     const skip = document.createElement("button");
     skip.className = "btn";
-    skip.textContent = "Skip";
+    skip.textContent = t("Skip", "דלג");
     skip.disabled = skips <= 0;
     skip.addEventListener("click", async () => {
       try { await skipSetupTransaction(db, ref(), myPlayerId!, key); }
-      catch (e) { alert("Failed: " + (e as Error).message); }
+      catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
     });
     actions.append(skip);
     c.append(input, actions);
     list.append(c);
     syncSend();
   } else {
-    $("collect-progress").textContent = mine.length ? "All your clues are in" : "You skipped all of yours";
+    $("collect-progress").textContent = mine.length ? t("All your clues are in", "כל הרמזים שלך בפנים") : t("You skipped all of yours", "דילגת על כל הספקטרומים שלך");
   }
   const allDone = allCluesDone(d);
   $("collect-done").hidden = false;
-  if (allDone) $("collect-done").textContent = "All clues are in — starting the guessing stage…";
-  else if (cur === -1) $("collect-done").textContent = `Waiting for ${partner?.name ?? "the other player"} to finish their clues…`;
+  if (allDone) $("collect-done").textContent = t("All clues are in — starting the guessing stage…", "כל הרמזים בפנים — מתחילים בשלב הניחושים…");
+  else if (cur === -1) $("collect-done").textContent = t(`Waiting for ${partner?.name ?? "the other player"} to finish their clues…`, `מחכים ש${partner?.name ?? "השחקן השני"} יסיים את הרמזים…`);
   else $("collect-done").hidden = true;
 }
 
@@ -560,7 +590,7 @@ function renderGuess() {
   show("collect");
   $("collect-code").textContent = d.code;
   $("collect-score").textContent = chipScore(d);
-  $("collect-round").textContent = `Round ${d.group ?? 1}`;
+  $("collect-round").textContent = t(`Round ${d.group ?? 1}`, `סיבוב ${d.group ?? 1}`);
   $("skip-wrap").hidden = true;
   if (dragging) return;
   const list = $("collect-list");
@@ -569,42 +599,42 @@ function renderGuess() {
   const { entries, theirs } = mySet(d);
   const latest = latestAnswer(d);
   if (latest && Date.now() - latest.it.answerAt! < REVEAL_MS) {
-    $("collect-title").textContent = "How did you do?";
-    $("collect-progress").textContent = "Next question in a moment…";
+    $("collect-title").textContent = t("How did you do?", "איך יצא לך?");
+    $("collect-progress").textContent = t("Next question in a moment…", "השאלה הבאה עוד רגע…");
     const it = latest.it;
     const c = card();
-    specLabels(c, it.left, it.right);
+    specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     revealDial(c, it.target, it.answer ?? 50);
     const guesser = Object.keys(d.players).find((p) => p !== it.by)!;
-    const who = guesser === myPlayerId ? "You" : d.players[guesser]?.name ?? "They";
+    const who = guesser === myPlayerId ? t("You", "אתה") : d.players[guesser]?.name ?? t("They", "השני");
     const pts = document.createElement("p");
     pts.className = "q-pts";
     const p = pointsFor(it.target, it.answer ?? 50);
-    pts.textContent = `${who} guessed ${it.answer} — target was ${it.target} → +${p} pts`;
+    pts.textContent = t(`${who} guessed ${it.answer} — target was ${it.target} → +${p} pts`, `${who} ניחש ${it.answer} — המטרה הייתה ${it.target} → +${p} נקודות`);
     c.append(pts);
     list.append(c);
     return;
   }
   const nextGlobal = entries.find(([, it]) => it.answer == null);
   if (!nextGlobal) {
-    $("collect-title").textContent = "All guesses are in";
-    $("collect-progress").textContent = "All guesses are in — opening the review…";
+    $("collect-title").textContent = t("All guesses are in", "כל הניחושים בפנים");
+    $("collect-progress").textContent = t("All guesses are in — opening the review…", "כל הניחושים בפנים — פותחים את הסיכום…");
     return;
   }
   const guesser = Object.keys(d.players).find((p) => p !== nextGlobal[1].by)!;
   if (guesser === myPlayerId) {
-    $("collect-title").textContent = "Your turn — guess the targets";
+    $("collect-title").textContent = t("Your turn — guess the targets", "התור שלך — נחשו את המטרות");
     const cur = theirs.findIndex(([, it]) => it.answer == null);
     const [key, it] = theirs[cur];
-    $("collect-progress").textContent = `Guessing ${cur + 1} of ${theirs.length}`;
+    $("collect-progress").textContent = t(`Guessing ${cur + 1} of ${theirs.length}`, `מנחש ${cur + 1} מתוך ${theirs.length}`);
     const c = card();
-    specLabels(c, it.left, it.right);
+    specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     const { bar, marker } = miniDial(c, "arrow", draftGuesses[key] ?? 50);
     const val = document.createElement("p");
     val.className = "hint";
-    val.textContent = `Your guess: ${Math.round(draftGuesses[key] ?? 50)}`;
+    val.textContent = t(`Your guess: ${Math.round(draftGuesses[key] ?? 50)}`, `הניחוש שלך: ${Math.round(draftGuesses[key] ?? 50)}`);
     c.append(val);
     const move = (e: PointerEvent) => {
       const rect = bar.getBoundingClientRect();
@@ -612,7 +642,7 @@ function renderGuess() {
       x = Math.max(0, Math.min(rect.width, x));
       draftGuesses[key] = (x / rect.width) * 100;
       marker.style.left = `${draftGuesses[key]}%`;
-      val.textContent = `Your guess: ${Math.round(draftGuesses[key])}`;
+      val.textContent = t(`Your guess: ${Math.round(draftGuesses[key])}`, `הניחוש שלך: ${Math.round(draftGuesses[key])}`);
     };
     bar.addEventListener("pointerdown", (e) => { dragging = true; bar.setPointerCapture(e.pointerId); move(e); });
     bar.addEventListener("pointermove", (e) => { if (dragging) move(e); });
@@ -622,34 +652,34 @@ function renderGuess() {
     actions.className = "card-actions";
     const lock = document.createElement("button");
     lock.className = "btn primary";
-    lock.textContent = "Lock guess";
+    lock.textContent = t("Lock guess", "נעילת ניחוש");
     lock.addEventListener("click", async () => {
       try { await updateDoc(ref(), { [`setup.q.${key}.answer`]: Math.round(draftGuesses[key] ?? 50), [`setup.q.${key}.answerAt`]: Date.now() }); }
-      catch (e) { alert("Failed: " + (e as Error).message); }
+      catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
     });
     actions.append(lock);
     c.append(actions);
     list.append(c);
   } else {
-    $("collect-title").textContent = `Waiting for ${d.players[guesser]?.name ?? "the other player"}…`;
+    $("collect-title").textContent = t(`Waiting for ${d.players[guesser]?.name ?? "the other player"}…`, `מחכים ל${d.players[guesser]?.name ?? "השחקן השני"}…`);
     $("collect-progress").textContent = "";
     const c = card();
     c.classList.add("waiting-card");
     const title = document.createElement("p");
     title.className = "hint";
     title.id = "waiting-title";
-    title.textContent = `${d.players[guesser]?.name ?? "The other player"} is answering…`;
+    title.textContent = t(`${d.players[guesser]?.name ?? "The other player"} is answering…`, `${d.players[guesser]?.name ?? "השחקן השני"} עונה…`);
     c.append(title);
     const dots = document.createElement("div");
     dots.className = "waiting-dots";
     dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
     c.append(dots);
     const it = nextGlobal[1];
-    specLabels(c, it.left, it.right);
+    specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     const hint = document.createElement("p");
     hint.className = "hint small-hint";
-    hint.textContent = "Your turn comes right after.";
+    hint.textContent = t("Your turn comes right after.", "התור שלך מיד אחרי.");
     c.append(hint);
     list.append(c);
   }
@@ -663,25 +693,25 @@ function renderReveal() {
   show("collect");
   $("collect-code").textContent = d.code;
   $("collect-score").textContent = chipScore(d);
-  $("collect-round").textContent = `Round ${d.group ?? 1}`;
-  $("collect-title").textContent = "Review — how close were you?";
+  $("collect-round").textContent = t(`Round ${d.group ?? 1}`, `סיבוב ${d.group ?? 1}`);
+  $("collect-title").textContent = t("Review — how close were you?", "סיכום — כמה קרובים הייתם?");
   $("skip-wrap").hidden = true;
   const entries = Object.entries(st.q);
   const count = entries.length;
   const idx = Math.min(st.reviewIdx ?? 0, Math.max(0, count - 1));
-  $("collect-progress").textContent = count ? `Review ${idx + 1} of ${count}` : "No questions this round";
+  $("collect-progress").textContent = count ? t(`Review ${idx + 1} of ${count}`, `סיכום ${idx + 1} מתוך ${count}`) : t("No questions this round", "אין שאלות בסיבוב הזה");
   const list = $("collect-list");
   list.innerHTML = "";
   const c = card();
   if (count) {
     const [, it] = entries[idx];
-    specLabels(c, it.left, it.right);
+    specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     revealDial(c, it.target, it.answer ?? 50);
     const pts = document.createElement("p");
     pts.className = "q-pts";
     const p = pointsFor(it.target, it.answer ?? 50);
-    pts.textContent = `Target ${it.target} vs guess ${it.answer ?? "—"} — off by ${Math.abs(it.target - (it.answer ?? 50))} → +${p} pts`;
+    pts.textContent = t(`Target ${it.target} vs guess ${it.answer ?? "—"} — off by ${Math.abs(it.target - (it.answer ?? 50))} → +${p} pts`, `מטרה ${it.target} לעומת ניחוש ${it.answer ?? "—"} — במרחק ${Math.abs(it.target - (it.answer ?? 50))} → +${p} נקודות`);
     c.append(pts);
   }
   if (d.host === myPlayerId) {
@@ -689,19 +719,19 @@ function renderReveal() {
     actions.className = "card-actions";
     const next = document.createElement("button");
     next.className = "btn primary";
-    next.textContent = count ? (idx + 1 >= count ? "Finish review" : "Next") : "See results";
+    next.textContent = count ? (idx + 1 >= count ? t("Finish review", "סיום סיכום") : t("Next", "הבא")) : t("See results", "הצגת תוצאות");
     next.addEventListener("click", async () => {
       try { await reviewNextTransaction(db, ref(), myPlayerId!); }
-      catch (e) { alert("Failed: " + (e as Error).message); }
+      catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
     });
     actions.append(next);
     if (count) {
       const skip = document.createElement("button");
       skip.className = "btn";
-      skip.textContent = "Skip review";
+      skip.textContent = t("Skip review", "דילוג על הסיכום");
       skip.addEventListener("click", async () => {
         try { await reviewSkipTransaction(db, ref(), myPlayerId!); }
-        catch (e) { alert("Failed: " + (e as Error).message); }
+        catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
       });
       actions.append(skip);
     }
@@ -709,7 +739,7 @@ function renderReveal() {
   } else {
     const hint = document.createElement("p");
     hint.className = "hint small-hint";
-    hint.textContent = "The host is driving the review.";
+    hint.textContent = t("The host is driving the review.", "המארח מוביל את הסיכום.");
     c.append(hint);
   }
   list.append(c);
@@ -733,9 +763,9 @@ function renderGame() {
   $("score").textContent = chipScore(d);
   $("round-num").textContent = String(r.n);
   $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
-  $("round-info").textContent = `${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`;
-  $("spec-left").textContent = r.left;
-  $("spec-right").textContent = r.right;
+  $("round-info").textContent = t(`${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`, `${d.players[r.giver].name} נותן רמז${isGiver ? " — זה אתה" : ""}`);
+  $("spec-left").textContent = langLabel(r.left, r.leftHe);
+  $("spec-right").textContent = langLabel(r.right, r.rightHe);
 
   $("clue-box").hidden = !r.clue;
   $("clue-text").textContent = r.clue;
@@ -744,7 +774,7 @@ function renderGame() {
   $("target-marker").hidden = !isGiver || revealPhase;
   if (isGiver && !revealPhase) {
     setPos($("target-marker"), r.target);
-    $("target-badge").textContent = `Target: ${r.target}`;
+    $("target-badge").textContent = t(`Target: ${r.target}`, `מטרה: ${r.target}`);
   }
   $("guess-arrow").hidden = !(isGuesser && guessPhase);
   if (isGuesser && guessPhase) {
@@ -762,9 +792,9 @@ function renderGame() {
     setPos($("reveal-target"), r.target);
     $("reveal-clue-line").hidden = !r.clue;
     $("reveal-clue").textContent = r.clue;
-    $("reveal-delta").textContent = `Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`;
+    $("reveal-delta").textContent = t(`Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`, `מטרה ${r.target} לעומת ניחוש ${r.guess} — במרחק ${Math.abs(r.target - r.guess)}`);
     const pts = pointsFor(r.target, r.guess);
-    $("reveal-points").textContent = pts > 0 ? `+${pts} points` : "+0 points";
+    $("reveal-points").textContent = pts > 0 ? t(`+${pts} points`, `+${pts} נקודות`) : t("+0 points", "+0 נקודות");
   }
 
   /* panels */
@@ -779,7 +809,7 @@ function renderGame() {
     $("guess-dial").hidden = !guessPhase;
   }
   $("reveal-panel").hidden = !revealPhase;
-  $("btn-next").textContent = (r.n % (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND) === 0) ? "Finish round" : "Next question";
+  $("btn-next").textContent = (r.n % (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND) === 0) ? t("Finish round", "סיום סיבוב") : t("Next question", "שאלה הבאה");
 }
 
 $("btn-continue").addEventListener("click", async () => {
@@ -789,7 +819,7 @@ $("btn-continue").addEventListener("click", async () => {
   if (n == null) return;
   try {
     await continueTransaction(db, ref(), n);
-  } catch (err) { alert("Failed: " + (err as Error).message); }
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
 });
 
 $("btn-send").addEventListener("click", async () => {
@@ -798,13 +828,13 @@ $("btn-send").addEventListener("click", async () => {
   try {
     await updateDoc(ref(), { phase: "guess", "round.clue": clue });
     ($("clue-input") as HTMLInputElement).value = "";
-  } catch (err) { alert("Failed: " + (err as Error).message); }
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
 });
 
 $("btn-lock").addEventListener("click", async () => {
   try {
     await updateDoc(ref(), { phase: "reveal", "round.guess": Math.round(draftGuess) });
-  } catch (err) { alert("Failed: " + (err as Error).message); }
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
 });
 
 $("btn-next").addEventListener("click", async () => {
@@ -812,7 +842,7 @@ $("btn-next").addEventListener("click", async () => {
   if (!n) return;
   try {
     await nextRoundTransaction(db, ref(), n);
-  } catch (err) { alert("Failed: " + (err as Error).message); }
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
 });
 
 /* ---------- dial ---------- */

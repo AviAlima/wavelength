@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="he">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -20,67 +20,74 @@
 
   <section id="screen-home" class="screen">
     <div class="card">
+      <div class="lang-toggle" id="lang-toggle" role="group" aria-label="Language">
+        <button id="lang-he" class="lang-btn active" type="button">עברית</button>
+        <button id="lang-en" class="lang-btn" type="button">English</button>
+      </div>
       <h1 class="logo">Wavelength</h1>
-      <p class="tagline">2 players. 1 spectrum. How well do you sync?</p>
+      <p class="tagline" data-i18n="tagline">2 players. 1 spectrum. How well do you sync?</p>
       <label class="field">
-        <span>Your name <em class="required">required</em></span>
-        <input id="nick-input" placeholder="The name your friends will see" maxlength="20" autocomplete="off">
+        <span data-i18n="label-nick">Your name <em class="required">required</em></span>
+        <input id="nick-input" placeholder="The name your friends will see" data-i18n-ph="nick-ph" maxlength="20" autocomplete="off">
       </label>
-      <p id="nick-error" class="error-text" hidden>Enter your name first.</p>
-      <button id="btn-create" class="btn primary">Create a party</button>
-      <div class="divider"><span>or</span></div>
+      <p id="nick-error" class="error-text" hidden data-i18n="nick-error">Enter your name first.</p>
+      <button id="btn-create" class="btn primary" data-i18n="btn-create">Create a party</button>
+      <div class="divider"><span data-i18n="or">or</span></div>
       <label class="field">
-        <span>Join with code</span>
+        <span data-i18n="label-join">Join with code</span>
         <input id="join-input" placeholder="ABCDE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
       </label>
-      <button id="btn-join" class="btn">Join party</button>
+      <button id="btn-join" class="btn" data-i18n="btn-join">Join party</button>
     </div>
   </section>
 
   <section id="screen-cats" class="screen" hidden>
     <div class="card">
-      <h2>Choose categories</h2>
-      <p class="hint small-hint">Pick which spectra to play with. Nothing selected = random from everything.</p>
+      <h2 data-i18n="cats-title">Choose categories</h2>
+      <p class="hint small-hint" data-i18n="cats-hint">Pick which spectra to play with. Nothing selected = random from everything.</p>
       <div id="cat-list"></div>
-      <button id="btn-create-cats" class="btn primary">Create party</button>
-      <button id="btn-back-cats" class="btn ghost">Back</button>
+      <button id="btn-create-cats" class="btn primary" data-i18n="btn-create-cats">Create party</button>
+      <button id="btn-back-cats" class="btn ghost" data-i18n="btn-back-cats">Back</button>
     </div>
   </section>
 
   <section id="screen-lobby" class="screen" hidden>
     <div class="card">
       <div class="code-row">
-        <div class="code-chip">Party code <b id="lobby-code"></b></div>
-        <button id="btn-copy" class="btn small-btn">Copy</button>
+        <div class="code-chip"><span data-i18n="code-label">Party code</span> <b id="lobby-code"></b></div>
+        <button id="btn-copy" class="btn small-btn" data-i18n="btn-copy">Copy</button>
       </div>
-      <h2>Players</h2>
+      <h2 data-i18n="players">Players</h2>
       <div id="lobby-players"></div>
-      <p id="lobby-waiting" class="hint">Waiting for a second player…<br>Share the code above.</p>
+      <p id="lobby-waiting" class="hint" data-i18n="lobby-waiting">Waiting for a second player…<br>Share the code above.</p>
       <label class="field" id="qpr-wrap" hidden>
-        <span>Questions per round</span>
+        <span data-i18n="qpr-label">Questions per round</span>
         <input id="qpr-input" type="number" min="1" max="20" value="6" inputmode="numeric">
       </label>
       <p id="lobby-qpr" class="hint" hidden></p>
       <label class="field toggle-row" id="collective-wrap" hidden>
         <input type="checkbox" id="collective-toggle" checked>
-        <span>All spectra up front<em class="hint-inline">Like the original game: the round's spectra are dealt ahead, each player sees the secret target on their own and writes clues, then you guess each other's targets. Off = one question at a time.</em></span>
+        <span>
+          <span data-i18n="collective-label">All spectra up front</span>
+          <em class="hint-inline" data-i18n="collective-hint">Like the original game: the round's spectra are dealt ahead, each player sees the secret target on their own and writes clues, then you guess each other's targets. Off = one question at a time.</em>
+        </span>
       </label>
       <p id="lobby-collective" class="hint" hidden></p>
       <p id="lobby-cats" class="hint"></p>
-      <p id="lobby-note" class="hint" hidden>Waiting for the host to start the game…</p>
+      <p id="lobby-note" class="hint" hidden data-i18n="lobby-note">Waiting for the host to start the game…</p>
       <button id="btn-start" class="btn primary" hidden disabled>Start game (waiting…)</button>
-      <p class="hint small-hint">Clue givers alternate every question. Guess within 6 of the target = 4 pts, 12 = 3, 20 = 2, 30 = 1.</p>
-      <button id="btn-leave" class="btn ghost">Leave party</button>
+      <p class="hint small-hint" data-i18n="rules-hint">Clue givers alternate every question. Guess within 6 of the target = 4 pts, 12 = 3, 20 = 2, 30 = 1.</p>
+      <button id="btn-leave" class="btn ghost" data-i18n="btn-leave">Leave party</button>
     </div>
   </section>
 
   <section id="screen-game" class="screen" hidden>
     <header class="game-header">
       <div class="code-chip small">#<span id="game-code"></span></div>
-      <div class="score-chip">Score <b id="score">0</b> <span id="sync-dot" class="sync-dot"></span></div>
+      <div class="score-chip"><span data-i18n="score">Score</span> <b id="score">0</b> <span id="sync-dot" class="sync-dot"></span></div>
     </header>
     <div class="card game-card">
-      <p class="round-info">Question <span id="round-num">1</span> • Round <span id="round-group">1</span> • <span id="round-info"></span></p>
+      <p class="round-info"><span data-i18n="q-label">Question</span> <span id="round-num">1</span> <span class="sep">•</span> <span data-i18n="round-label">Round</span> <span id="round-group">1</span> <span class="sep">•</span> <span id="round-info"></span></p>
       <div id="clue-box" class="clue-box" hidden>“<span id="clue-text"></span>”</div>
 
       <div class="spectrum">
@@ -97,46 +104,46 @@
 
       <div id="giver-panel">
         <div id="clue-input-wrap">
-          <p class="hint"><span id="target-badge" class="badge"></span> Give a clue that lands your teammate near the target:</p>
+          <p class="hint"><span id="target-badge" class="badge"></span><span data-i18n="game-clue-hint"> Give a clue that lands your teammate near the target:</span></p>
           <label class="field">
-            <input id="clue-input" placeholder="e.g. “Sunday morning”" maxlength="60" autocomplete="off">
+            <input id="clue-input" placeholder="e.g. “Sunday morning”" data-i18n-ph="clue-ph" maxlength="60" autocomplete="off">
           </label>
-          <button id="btn-send" class="btn primary">Send clue</button>
+          <button id="btn-send" class="btn primary" data-i18n="btn-send">Send clue</button>
         </div>
-        <p id="giver-wait" class="hint" hidden>Waiting for your teammate's guess…</p>
+        <p id="giver-wait" class="hint" hidden data-i18n="giver-wait">Waiting for your teammate's guess…</p>
       </div>
 
       <div id="guess-panel">
-        <p id="guess-wait" class="hint">Waiting for a clue…</p>
+        <p id="guess-wait" class="hint" data-i18n="guess-wait">Waiting for a clue…</p>
         <div id="guess-dial" hidden>
-          <p class="hint">Drag the arrow to where the target is: <b id="guess-value">50</b></p>
-          <button id="btn-lock" class="btn primary">Lock guess</button>
+          <p class="hint"><span data-i18n="drag-hint">Drag the arrow to where the target is:</span> <b id="guess-value">50</b></p>
+          <button id="btn-lock" class="btn primary" data-i18n="btn-lock">Lock guess</button>
         </div>
       </div>
 
       <div id="reveal-panel" hidden>
-        <p class="hint" id="reveal-clue-line">Clue: “<b id="reveal-clue"></b>”</p>
+        <p class="hint" id="reveal-clue-line"><span data-i18n="reveal-clue-label">Clue:</span> “<b id="reveal-clue"></b>”</p>
         <p class="hint" id="reveal-delta"></p>
         <p class="points" id="reveal-points"></p>
         <button id="btn-next" class="btn primary">Next round</button>
       </div>
 
-      <button id="btn-leave-game" class="btn ghost">Leave party</button>
+      <button id="btn-leave-game" class="btn ghost" data-i18n="btn-leave-game">Leave party</button>
     </div>
   </section>
 
   <section id="screen-collect" class="screen" hidden>
     <header class="game-header">
       <div class="code-chip small">#<span id="collect-code"></span></div>
-      <div class="score-chip">Score <b id="collect-score">0</b></div>
+      <div class="score-chip"><span data-i18n="score">Score</span> <b id="collect-score">0</b></div>
     </header>
     <div class="card game-card">
-      <p class="round-info"><span id="collect-round">Round 1</span> • <span id="collect-title"></span></p>
+      <p class="round-info"><span id="collect-round">Round 1</span> <span class="sep">•</span> <span id="collect-title"></span></p>
       <p class="hint" id="collect-progress"></p>
       <div id="collect-list"></div>
-      <p class="hint small-hint" id="skip-wrap"><span id="skip-dots"></span> <span id="skip-text">skips left — skipped spectra are dropped from the round</span></p>
+      <p class="hint small-hint" id="skip-wrap"><span id="skip-dots"></span> <span data-i18n="skip-text">skips left — skipped spectra are dropped from the round</span></p>
       <p class="hint" id="collect-done" hidden></p>
-      <button id="btn-leave-collect" class="btn ghost">Leave party</button>
+      <button id="btn-leave-collect" class="btn ghost" data-i18n="btn-leave-collect">Leave party</button>
     </div>
   </section>
 
@@ -145,9 +152,9 @@
       <h2 id="summary-title">Round complete!</h2>
       <p class="hint" id="summary-round"></p>
       <p class="points" id="summary-total"></p>
-      <button id="btn-continue" class="btn primary" hidden>Continue playing</button>
-      <p id="summary-wait" class="hint" hidden>Waiting for the host…</p>
-      <button id="btn-end" class="btn ghost">End game</button>
+      <button id="btn-continue" class="btn primary" hidden data-i18n="btn-continue">Continue playing</button>
+      <p id="summary-wait" class="hint" hidden data-i18n="summary-wait">Waiting for the host…</p>
+      <button id="btn-end" class="btn ghost" data-i18n="btn-end">End game</button>
     </div>
   </section>
 
@@ -156,11 +163,11 @@
 </div>
 <div id="leave-confirm" class="modal" hidden>
   <div class="modal-card card">
-    <h2>Leave the party?</h2>
+    <h2 data-i18n="modal-title">Leave the party?</h2>
     <p class="hint" id="leave-confirm-text">Everyone in the room will be dropped and the party will close.</p>
     <div class="card-actions">
-      <button id="btn-stay" class="btn primary">Stay</button>
-      <button id="btn-confirm-leave" class="btn">Leave</button>
+      <button id="btn-stay" class="btn primary" data-i18n="btn-stay">Stay</button>
+      <button id="btn-confirm-leave" class="btn" data-i18n="btn-confirm-leave">Leave</button>
     </div>
   </div>
 </div>

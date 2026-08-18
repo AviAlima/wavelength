@@ -9,6 +9,7 @@ export async function deleteRoom(code: string) {
 
 export async function openHome(page: Page, nick: string) {
   await page.goto("/");
+  await page.locator("#lang-en").click();
   await page.fill("#nick-input", nick);
 }
 
