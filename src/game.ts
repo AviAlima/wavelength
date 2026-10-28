@@ -5,7 +5,7 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.17.3";
+const VERSION = "1.18.0";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -66,6 +66,12 @@ const ref = () => doc(db, "rooms", roomCode!);
 const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), summary: $("screen-summary") };
 const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
 const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
+const setTurnStatus = (id: string, tone: "action" | "waiting" | "success", text: string) => {
+  const el = $(id);
+  el.className = `turn-status ${tone}`;
+  el.dataset.tone = tone;
+  el.textContent = text;
+};
 
 /* ---------- home ---------- */
 
@@ -530,6 +536,16 @@ function renderCollect() {
   const ps = st.byPlayer[myPlayerId!];
   const skips = ps?.skips ?? MAX_SKIPS;
   const cur = mine.findIndex(([, it]) => it.clue.trim() === "");
+  const allDone = allCluesDone(d);
+  setTurnStatus(
+    "collect-status",
+    cur !== -1 ? "action" : allDone ? "success" : "waiting",
+    cur !== -1
+      ? t("Your turn — write a clue", "התור שלך — כתבו רמז")
+      : allDone
+        ? t("All clues are in", "כל הרמזים בפנים")
+        : t(`Waiting for ${partner?.name ?? "the other player"}…`, `מחכים ל${partner?.name ?? "השחקן השני"}…`),
+  );
   $("skip-wrap").hidden = cur === -1;
   renderSkipDots(skips);
   const list = $("collect-list");
@@ -593,7 +609,6 @@ function renderCollect() {
   } else {
     $("collect-progress").textContent = mine.length ? t("All your clues are in", "כל הרמזים שלך בפנים") : t("You skipped all of yours", "דילגת על כל הספקטרומים שלך");
   }
-  const allDone = allCluesDone(d);
   $("collect-done").hidden = false;
   if (allDone) $("collect-done").textContent = t("All clues are in — starting the guessing stage…", "כל הרמזים בפנים — מתחילים בשלב הניחושים…");
   else if (cur === -1) $("collect-done").textContent = t(`Waiting for ${partner?.name ?? "the other player"} to finish their clues…`, `מחכים ש${partner?.name ?? "השחקן השני"} יסיים את הרמזים…`);
@@ -617,6 +632,7 @@ function renderGuess() {
   const { entries, theirs } = mySet(d);
   const latest = latestAnswer(d);
   if (latest && Date.now() - latest.it.answerAt! < REVEAL_MS) {
+    setTurnStatus("collect-status", "success", t("Guess revealed", "הניחוש נחשף"));
     $("collect-title").textContent = t("How did you do?", "איך יצא לך?");
     $("collect-progress").textContent = t("Next question in a moment…", "השאלה הבאה עוד רגע…");
     const it = latest.it;
@@ -636,12 +652,14 @@ function renderGuess() {
   }
   const nextGlobal = entries.find(([, it]) => it.answer == null);
   if (!nextGlobal) {
+    setTurnStatus("collect-status", "success", t("All guesses are in", "כל הניחושים בפנים"));
     $("collect-title").textContent = t("All guesses are in", "כל הניחושים בפנים");
     $("collect-progress").textContent = t("All guesses are in — opening the review…", "כל הניחושים בפנים — פותחים את הסיכום…");
     return;
   }
   const guesser = Object.keys(d.players).find((p) => p !== nextGlobal[1].by)!;
   if (guesser === myPlayerId) {
+    setTurnStatus("collect-status", "action", t("Your turn — place the arrow", "התור שלך — מקמו את החץ"));
     $("collect-title").textContent = t("Your turn — guess the targets", "התור שלך — נחשו את המטרות");
     const cur = theirs.findIndex(([, it]) => it.answer == null);
     const [key, it] = theirs[cur];
@@ -679,6 +697,11 @@ function renderGuess() {
     c.append(actions);
     list.append(c);
   } else {
+    setTurnStatus(
+      "collect-status",
+      "waiting",
+      t(`Waiting for ${d.players[guesser]?.name ?? "the other player"}…`, `מחכים ל${d.players[guesser]?.name ?? "השחקן השני"}…`),
+    );
     $("collect-title").textContent = t(`Waiting for ${d.players[guesser]?.name ?? "the other player"}…`, `מחכים ל${d.players[guesser]?.name ?? "השחקן השני"}…`);
     $("collect-progress").textContent = "";
     const c = card();
@@ -712,6 +735,7 @@ function renderReveal() {
   $("collect-code").textContent = d.code;
   $("collect-score").textContent = chipScore(d);
   $("collect-round").textContent = t(`Round ${d.group ?? 1}`, `סיבוב ${d.group ?? 1}`);
+  setTurnStatus("collect-status", "success", t("Round review", "סיכום הסיבוב"));
   $("collect-title").textContent = t("Review — how close were you?", "סיכום — כמה קרובים הייתם?");
   $("skip-wrap").hidden = true;
   const entries = Object.entries(st.q);
@@ -776,6 +800,19 @@ function renderGame() {
   const cluePhase = d.phase === "clue";
   const guessPhase = d.phase === "guess";
   const revealPhase = d.phase === "reveal";
+
+  if (revealPhase) {
+    setTurnStatus("game-status", "success", t("Guess revealed", "הניחוש נחשף"));
+  } else if ((cluePhase && isGiver) || (guessPhase && isGuesser)) {
+    setTurnStatus(
+      "game-status",
+      "action",
+      cluePhase ? t("Your turn — write a clue", "התור שלך — כתבו רמז") : t("Your turn — place the arrow", "התור שלך — מקמו את החץ"),
+    );
+  } else {
+    const activePlayer = cluePhase ? d.players[r.giver]?.name : d.players[r.guesser]?.name;
+    setTurnStatus("game-status", "waiting", t(`Waiting for ${activePlayer ?? "the other player"}…`, `מחכים ל${activePlayer ?? "השחקן השני"}…`));
+  }
 
   $("game-code").textContent = d.code;
   $("score").textContent = chipScore(d);

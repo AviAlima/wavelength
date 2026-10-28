@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css?v=1.17.3">
+<link rel="stylesheet" href="css/style.css?v=1.18.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -87,6 +87,7 @@
       <div class="score-chip"><span data-i18n="score">Score</span> <b id="score">0</b> <span id="sync-dot" class="sync-dot"></span></div>
     </header>
     <div class="card game-card">
+      <div id="game-status" class="turn-status" role="status" aria-live="polite"></div>
       <p class="round-info"><span data-i18n="q-label">Question</span> <span id="round-num">1</span> <span class="sep">•</span> <span data-i18n="round-label">Round</span> <span id="round-group">1</span> <span class="sep">•</span> <span id="round-info"></span></p>
       <div id="clue-box" class="clue-box" hidden>“<span id="clue-text"></span>”</div>
 
@@ -138,6 +139,7 @@
       <div class="score-chip"><span data-i18n="score">Score</span> <b id="collect-score">0</b></div>
     </header>
     <div class="card game-card">
+      <div id="collect-status" class="turn-status" role="status" aria-live="polite"></div>
       <p class="round-info"><span id="collect-round">Round 1</span> <span class="sep">•</span> <span id="collect-title"></span></p>
       <p class="hint" id="collect-progress"></p>
       <div id="collect-list"></div>
@@ -174,6 +176,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js?v=1.17.3"></script>
+<script type="module" src="js/game.js?v=1.18.0"></script>
 </body>
 </html>

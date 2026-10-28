@@ -40,6 +40,8 @@ test("full round flow: clue -> guess -> reveal -> next round with alternating gi
     const giver = hostIsGiver ? host : guest;
     const guesser = hostIsGiver ? guest : host;
 
+    await expect(giver.locator("#game-status")).toHaveAttribute("data-tone", "action");
+    await expect(guesser.locator("#game-status")).toHaveAttribute("data-tone", "waiting");
     await expect(giver.locator("#clue-input-wrap")).toBeVisible();
     await expect(giver.locator("#target-marker")).toBeVisible();
     await expect(guesser.locator("#guess-wait")).toBeVisible();
@@ -50,6 +52,8 @@ test("full round flow: clue -> guess -> reveal -> next round with alternating gi
     await giver.click("#btn-send");
 
     await expect(guesser.locator("#guess-dial")).toBeVisible();
+    await expect(guesser.locator("#game-status")).toHaveAttribute("data-tone", "action");
+    await expect(giver.locator("#game-status")).toHaveAttribute("data-tone", "waiting");
     await expect(guesser.locator("#clue-box")).toContainText("banana");
     await expect(giver.locator("#giver-wait")).toBeVisible();
 
@@ -213,10 +217,10 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.17.3");
+  await expect(page.locator("#version")).toHaveText("1.18.0");
   const update = page.getByRole("button", { name: "Update version" });
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.17.3");
+  await expect(page.locator("#version")).toHaveText("1.18.0");
 });
