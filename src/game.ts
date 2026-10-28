@@ -5,7 +5,7 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.17.0";
+const VERSION = "1.17.1";
 document.getElementById("version")!.textContent = VERSION;
 
 applyStaticLang();
@@ -187,7 +187,6 @@ function openRoom(code: string) {
     }
     roomData = snap.data() as RoomData;
     setSync(!!(snap.metadata.hasPendingWrites || snap.metadata.fromCache));
-    render();
     if (roomData && roomData.setup && roomData.setup.startedAt !== lastSetupStart) {
       lastSetupStart = roomData.setup.startedAt;
       setupDoneFired = false;
@@ -196,6 +195,7 @@ function openRoom(code: string) {
       draftClues = {};
       draftGuesses = {};
     }
+    render();
   });
 }
 
@@ -525,6 +525,15 @@ function renderCollect() {
   $("skip-wrap").hidden = cur === -1;
   renderSkipDots(skips);
   const list = $("collect-list");
+  if (cur !== -1) {
+    const [key] = mine[cur];
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement && active.dataset.clueKey === key && list.contains(active)) {
+      draftClues[key] = active.value;
+      $("collect-done").hidden = true;
+      return;
+    }
+  }
   list.innerHTML = "";
   if (cur !== -1) {
     const [key, it] = mine[cur];
@@ -541,6 +550,7 @@ function renderCollect() {
     miniDial(c, "target", it.target);
     const input = document.createElement("input");
     input.maxLength = 60;
+    input.dataset.clueKey = key;
     input.placeholder = t("e.g. “Sunday morning”", "למשל: “בוקר של יום ראשון”");
     input.value = draftClues[key] ?? it.clue;
     const actions = document.createElement("div");

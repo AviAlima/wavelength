@@ -51,8 +51,15 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
     await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
     await expect(host.locator("#collect-list .q-card .marker.target")).toHaveCount(1);
     await expect(host.locator("#collect-list .q-card .badge")).toHaveText(/Target: \d+/);
+    const guestClue = guest.locator("#collect-list .q-card input");
+    await guestClue.fill("spicy");
+    await expect(guestClue).toBeFocused();
     await sendClue(host, "sunny");
     await expect(host.locator("#collect-done")).toContainText(/waiting for Babi/i);
+
+    // A remote update must not replace the input currently being edited.
+    await expect(guestClue).toBeFocused();
+    await expect(guestClue).toHaveValue("spicy");
 
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await sendClue(guest, "spicy");
@@ -126,6 +133,7 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
     await host.click("#btn-continue");
     await expect(host.locator("#collect-round")).toHaveText("Round 2");
     await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
+    await expect(host.locator("#collect-list .q-card input")).toHaveValue("");
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
 
     const room2 = (await (await fetch(roomUrl(code))).json()).fields;
