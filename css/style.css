@@ -265,11 +265,25 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 .points { font-size: 26px; font-weight: 800; margin: 10px 0; color: var(--ok); }
 
 .footer {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   color: #4a5468;
   font-size: 12px;
   margin-top: 16px;
 }
+
+.version-update {
+  border: 0;
+  padding: 2px 6px;
+  color: #64748b;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.version-update:hover { color: #94a3b8; }
 
 .cat-option {
   display: flex;

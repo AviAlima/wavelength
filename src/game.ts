@@ -5,8 +5,14 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.17.1";
+const VERSION = "1.17.2";
 document.getElementById("version")!.textContent = VERSION;
+
+document.getElementById("btn-update-version")!.addEventListener("click", () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set("refresh", Date.now().toString());
+  window.location.replace(url.toString());
+});
 
 applyStaticLang();
 

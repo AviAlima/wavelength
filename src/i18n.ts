@@ -63,6 +63,7 @@ export const STRINGS: Record<string, { en: string; he: string }> = {
   "btn-continue": { en: "Continue playing", he: "המשך לשחק" },
   "summary-wait": { en: "Waiting for the host…", he: "מחכים למארח…" },
   "btn-end": { en: "End game", he: "סיום משחק" },
+  "btn-update-version": { en: "Update version", he: "עדכון גרסה" },
   "modal-title": { en: "Leave the party?", he: "לעזוב את המשחק?" },
   "btn-stay": { en: "Stay", he: "הישארו" },
   "btn-confirm-leave": { en: "Leave", he: "עזוב" },

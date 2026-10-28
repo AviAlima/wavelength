@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=1.17.2">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -158,7 +158,10 @@
     </div>
   </section>
 
-  <footer class="footer">v<span id="version">?</span></footer>
+  <footer class="footer">
+    <span>v<span id="version">?</span></span>
+    <button id="btn-update-version" class="version-update" type="button" data-i18n="btn-update-version">Update version</button>
+  </footer>
 
 </div>
 <div id="leave-confirm" class="modal" hidden>
@@ -171,6 +174,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js"></script>
+<script type="module" src="js/game.js?v=1.17.2"></script>
 </body>
 </html>
