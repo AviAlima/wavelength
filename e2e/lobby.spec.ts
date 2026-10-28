@@ -3,14 +3,19 @@ import { createRoom, joinRoom, deleteRoom, openHome } from "./helpers";
 
 test("Hebrew is the default language; toggle switches to English", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator(".card").first()).toHaveCSS("text-align", "right");
   await expect(page.locator("#btn-create")).toHaveText("צור משחק");
   await expect(page.locator("#btn-join")).toHaveText("הצטרף למשחק");
   await expect(page.locator(".lang-btn.active")).toHaveText("עברית");
   await page.locator("#lang-en").click();
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  await expect(page.locator(".card").first()).toHaveCSS("text-align", "left");
   await expect(page.locator("#btn-create")).toHaveText("Create a party");
   await expect(page.locator("#btn-join")).toHaveText("Join party");
   await expect(page.locator(".lang-btn.active")).toHaveText("English");
   await page.locator("#lang-he").click();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("#btn-create")).toHaveText("צור משחק");
 });
 

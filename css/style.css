@@ -19,7 +19,11 @@ body {
   background: radial-gradient(1200px 800px at 70% -10%, #16233f 0%, var(--bg) 55%);
   color: var(--text);
   min-height: 100dvh;
+  text-align: start;
 }
+
+html[dir="rtl"] .card { text-align: right; }
+html[dir="ltr"] .card { text-align: left; }
 
 #app {
   max-width: 520px;
@@ -91,6 +95,7 @@ input {
   border-radius: 12px;
   padding: 14px;
   font-size: 16px;
+  text-align: start;
 }
 input:focus { outline: none; border-color: var(--accent); }
 
@@ -104,6 +109,7 @@ input:focus { outline: none; border-color: var(--accent); }
   cursor: pointer;
   color: var(--text);
   background: var(--card2);
+  text-align: center;
 }
 .btn:active { transform: scale(.98); }
 .btn.primary { background: linear-gradient(90deg, #0ea5e9, #6366f1); color: #fff; }
@@ -175,7 +181,7 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
   height: 9px;
   border-radius: 50%;
   background: var(--ok);
-  margin-left: 8px;
+  margin-inline-start: 8px;
   transition: background .3s;
 }
 .sync-dot.warn { background: var(--accent2); }
@@ -185,7 +191,7 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 
 .clue-box {
   background: var(--card2);
-  border-left: 3px solid var(--accent2);
+  border-inline-start: 3px solid var(--accent2);
   padding: 12px 14px;
   border-radius: 10px;
   font-size: 17px;
@@ -195,12 +201,14 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
 .spectrum { margin: 18px 0 10px; }
 .spec-labels {
   display: flex;
+  direction: ltr;
   justify-content: space-between;
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 10px;
   padding: 0 2px;
 }
+.spec-labels span { unicode-bidi: isolate; }
 .spec-labels span:last-child { text-align: right; }
 
 .dial { position: relative; }
@@ -259,7 +267,7 @@ h2 { margin: 18px 0 12px; font-size: 18px; }
   padding: 2px 10px;
   border-radius: 999px;
   font-size: 13px;
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 
 .points { font-size: 26px; font-weight: 800; margin: 10px 0; color: var(--ok); }
@@ -350,7 +358,7 @@ input.input-error { border-color: #f87171; }
   height: 10px;
   border-radius: 50%;
   background: var(--accent2);
-  margin-right: 6px;
+  margin-inline-end: 6px;
   box-shadow: 0 0 6px rgba(245, 158, 11, .5);
 }
 .skip-dot.used { background: #2a3650; box-shadow: none; }
@@ -366,4 +374,4 @@ input.input-error { border-color: #f87171; }
   padding: 20px;
 }
 .modal[hidden] { display: none; }
-.modal-card { width: 100%; max-width: 380px; text-align: center; }
+.modal-card { width: 100%; max-width: 380px; }

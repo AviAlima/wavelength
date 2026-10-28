@@ -71,6 +71,7 @@ export const STRINGS: Record<string, { en: string; he: string }> = {
 
 export function applyStaticLang(): void {
   document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
     const s = STRINGS[el.dataset.i18n ?? ""];
     if (s) el.innerHTML = s[lang];

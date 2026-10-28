@@ -5,7 +5,7 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.17.2";
+const VERSION = "1.17.3";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -445,8 +445,10 @@ const specLabels = (c: HTMLElement, left: string, right: string, leftHe?: string
   const labels = document.createElement("div");
   labels.className = "spec-labels";
   const l = document.createElement("span");
+  l.dir = "auto";
   l.textContent = langLabel(left, leftHe);
   const r = document.createElement("span");
+  r.dir = "auto";
   r.textContent = langLabel(right, rightHe);
   labels.append(l, r);
   c.append(labels);

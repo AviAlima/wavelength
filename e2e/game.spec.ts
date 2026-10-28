@@ -213,10 +213,10 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.17.2");
+  await expect(page.locator("#version")).toHaveText("1.17.3");
   const update = page.getByRole("button", { name: "Update version" });
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.17.2");
+  await expect(page.locator("#version")).toHaveText("1.17.3");
 });
