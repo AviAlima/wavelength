@@ -64,7 +64,9 @@ for (const mode of ["cooperative", "competitive"] as const) {
         await expect(guessers[1].locator("#party-guess")).toBeFocused();
         await expect(host.locator(".party-reveal")).toHaveCount(0);
         await Promise.all(guessers.slice(1).map((p) => guess(p, target)));
-        await expect(host.locator(".party-reveal")).toBeVisible();
+        // Concurrent locks retry on the same Firestore document. A click returns
+        // before those transactions commit; allow their bounded retry window.
+        await expect(host.locator(".party-reveal")).toBeVisible({ timeout: 30000 });
         await expect(host.locator(".player-guess")).toHaveCount(size - 1);
         const revealed = await read();
         const numeric = (field: { integerValue?: string; doubleValue?: number }) => Number(field.integerValue ?? field.doubleValue);
