@@ -130,8 +130,8 @@ button.home-action { font: inherit; cursor: pointer; }
 .action-arrow { margin-inline-start: auto; color: var(--accent); font-size: 22px; }
 html[dir="ltr"] .action-arrow { transform: scaleX(-1); }
 .join-content { flex: 1; min-width: 0; }
-.join-row { display: flex; gap: 8px; margin-top: 12px; direction: ltr; }
-.join-row input { min-width: 0; text-align: center; letter-spacing: 4px; font-weight: 800; text-transform: uppercase; }
+.join-row { display: flex; gap: 8px; margin-top: 12px; }
+.join-row input { direction: ltr; min-width: 0; text-align: center; letter-spacing: 4px; font-weight: 800; text-transform: uppercase; }
 .join-row .btn { width: auto; min-width: 84px; padding-inline: 16px; }
 
 .lang-toggle {
