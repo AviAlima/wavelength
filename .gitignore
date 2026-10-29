@@ -1,5 +1,6 @@
 node_modules/
 dist/
 sim/sim.bundle.cjs
+sim/party.test.bundle.cjs
 playwright-report/
 test-results/

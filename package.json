@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:party": "esbuild sim/party.test.ts --bundle --platform=node --format=cjs --outfile=sim/party.test.bundle.cjs && node sim/party.test.bundle.cjs",
     "typecheck": "tsc --noEmit",
     "build": "esbuild src/game.ts --bundle --format=esm --external:firebase/* --outfile=dist/js/game.js && cp index.html dist/index.html && rm -rf dist/css && cp -r css dist/css",
     "sim": "esbuild sim/sim.ts --bundle --format=cjs --platform=node --outfile=sim/sim.bundle.cjs && node sim/sim.bundle.cjs",

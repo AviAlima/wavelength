@@ -172,18 +172,26 @@ test("skipping a spectrum deals a fresh one in its place — the question count 
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(2);
     const labelsBefore = await host.locator("#collect-list .q-card .spec-labels").innerText();
     await host.locator("#collect-list .q-card button.btn:not(.primary)").click();
+    await expect(host.locator("#skip-confirm")).toBeVisible();
+    await host.click("#btn-cancel-skip");
+    await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(2);
+    await expect(host.locator("#collect-list .q-card .spec-labels")).toHaveText(labelsBefore, { useInnerText: true });
+    await host.locator("#collect-list .q-card button.btn:not(.primary)").click();
+    await host.click("#btn-confirm-skip");
     await expect(host.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(1);
     await expect(host.locator("#collect-progress")).toHaveText("Spectrum 1 of 1 — write a clue");
-    await expect(host.locator("#collect-list .q-card .spec-labels")).not.toHaveText(labelsBefore);
+    await expect(host.locator("#collect-list .q-card .spec-labels")).not.toHaveText(labelsBefore, { useInnerText: true });
     await sendClue(host, "sunny");
     await expect(host.locator("#collect-done")).toContainText(/waiting for Babi/i);
 
     // guest skips twice — each time the spectrum is replaced, still 2 to answer
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await guest.locator("#collect-list .q-card button.btn:not(.primary)").click();
+    await guest.click("#btn-confirm-skip");
     await expect(guest.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(1);
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await guest.locator("#collect-list .q-card button.btn:not(.primary)").click();
+    await guest.click("#btn-confirm-skip");
     await expect(guest.locator("#skip-dots .skip-dot:not(.used)")).toHaveCount(0);
     await expect(guest.locator("#collect-progress")).toHaveText("Spectrum 1 of 2 — write a clue");
     await sendClue(guest, "spicy");

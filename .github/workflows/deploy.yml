@@ -24,8 +24,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:party
       - run: npm run e2e
   deploy:
+    needs: e2e
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,11 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
+import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
 import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
+import { usesPartyFlow, configurePartyTransaction, joinPlayerTransaction, startPartyTransaction, sendPartyClueTransaction, lockPartyGuessTransaction, advancePartyTransaction, type ScoringMode } from "./party-logic.js";
 
-const VERSION = "1.20.0";
+const VERSION = "1.21.0";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -62,9 +63,11 @@ let setupDoneFired = false;
 let guessTurnFired = false;
 let lastTurn = "";
 let lastSetupStart = 0;
+let lobbyDeparture = "";
+let pendingSkip: { code: string; pid: string; key: string; startedAt: number; idx: number; button: HTMLButtonElement } | null = null;
 
 const ref = () => doc(db, "rooms", roomCode!);
-const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), summary: $("screen-summary") };
+const screens: Record<string, HTMLElement> = { home: $("screen-home"), cats: $("screen-cats"), lobby: $("screen-lobby"), game: $("screen-game"), collect: $("screen-collect"), party: $("screen-party"), summary: $("screen-summary") };
 const show = (name: string) => { for (const [k, el] of Object.entries(screens)) el.hidden = k !== name; };
 const setPos = (el: HTMLElement, val: number) => { el.style.left = `${val}%`; };
 const setTurnStatus = (id: string, tone: "action" | "waiting" | "success", text: string) => {
@@ -228,6 +231,8 @@ async function createRoom(categories: string[]) {
       score: 0,
       questionsPerRound: 6,
       collective: true,
+      maxPlayers: 2,
+      scoringMode: "cooperative",
       categories,
       round: null,
     });
@@ -242,40 +247,35 @@ async function joinRoom() {
   const code = ($("join-input") as HTMLInputElement).value.trim().toUpperCase();
   if (!code) return;
   try {
-    const snap = await getDoc(doc(db, "rooms", code));
-    if (!snap.exists()) { alert(t("Room not found", "החדר לא נמצא")); return; }
-    const data = snap.data() as RoomData;
-    const pids = Object.keys(data.players);
-    if (data.phase !== "lobby") {
-      if (myPlayerId && pids.includes(myPlayerId)) { openRoom(code); return; }
-      alert(t("The game already started", "המשחק כבר התחיל"));
-      return;
-    }
-    if (myPlayerId && pids.includes(myPlayerId)) {
-      openRoom(code);
-      return;
-    }
-    if (pids.length >= 2) { alert(t("Room is full", "החדר מלא")); return; }
     const id = freshId();
-    sessionStorage.setItem("wave_player_id", id);
-    myPlayerId = id;
-    await updateDoc(doc(db, "rooms", code), {
-      [`players.${id}`]: { id, name: myName(), color: COLORS[pids.length], avatar: myAvatar },
-    });
+    const result = await joinPlayerTransaction(db, doc(db, "rooms", code), { id, name: myName(), color: COLORS[Math.floor(Math.random() * COLORS.length)], avatar: myAvatar }, myPlayerId);
+    if ("error" in result) {
+      alert(result.error === "missing" ? t("Room not found", "החדר לא נמצא") : result.error === "full" ? t("Room is full", "החדר מלא") : t("The game already started", "המשחק כבר התחיל"));
+      return;
+    }
+    sessionStorage.setItem("wave_player_id", result.id);
+    myPlayerId = result.id;
     openRoom(code);
   } catch (err) { alert(t("Could not join: ", "לא הצלחנו להצטרף: ") + (err as Error).message); }
 }
 
 function openRoom(code: string) {
   roomCode = code;
+  lobbyDeparture = "";
   if (unsub) unsub();
   unsub = onSnapshot(doc(db, "rooms", code), { includeMetadataChanges: true }, (snap) => {
+    if (roomCode !== code) return;
     if (!snap.exists()) {
-      alert(t("The party was closed by the other player", "המשחק נסגר על ידי השחקן השני"));
-      leaveRoom();
+      void leaveRoom(true);
+      alert(t("Another player left and the party closed.", "משתתף אחר עזב והמשחק נסגר."));
       return;
     }
-    roomData = snap.data() as RoomData;
+    const incoming = snap.data() as RoomData;
+    if (roomData?.phase === "lobby" && roomData.code === code) {
+      const departed = Object.values(roomData.players).filter((player) => !incoming.players[player.id]);
+      if (departed.length) lobbyDeparture = departed.map((player) => player.name).join(", ");
+    }
+    roomData = incoming;
     setSync(!!(snap.metadata.hasPendingWrites || snap.metadata.fromCache));
     if (roomData && roomData.setup && roomData.setup.startedAt !== lastSetupStart) {
       lastSetupStart = roomData.setup.startedAt;
@@ -293,30 +293,19 @@ const setSync = (warn: boolean) => {
   $("sync-dot").classList.toggle("warn", warn);
 };
 
-async function leaveRoom() {
-  if (roomCode && roomData) {
-    try {
-      const isHost = roomData.host === myPlayerId;
-      if (roomData.phase === "lobby") {
-        if (isHost) {
-          await deleteDoc(ref());
-        } else {
-          await updateDoc(ref(), { [`players.${myPlayerId}`]: deleteField() });
-          if (Object.keys(roomData.players).filter((p) => p !== myPlayerId).length === 0) {
-            await deleteDoc(ref());
-          }
-        }
-      } else {
-        await deleteDoc(ref());
-      }
-    } catch (e) { /* ignore */ }
-  }
+async function leaveRoom(remoteClosed = false) {
+  const departingCode = roomCode;
+  const departingData = roomData;
+  const departingId = myPlayerId;
+  // Detach before our own write can notify this client of the deleted room.
+  if (unsub) unsub();
+  unsub = null;
   sessionStorage.removeItem("wave_player_id");
   myPlayerId = null;
-  if (unsub) unsub();
   roomCode = null;
   roomData = null;
-  unsub = null;
+  pendingSkip = null;
+  $("skip-confirm").hidden = true;
   draftClues = {};
   draftGuesses = {};
   setupDoneFired = false;
@@ -324,6 +313,16 @@ async function leaveRoom() {
   lastTurn = "";
   lastSetupStart = 0;
   show("home");
+  if (!remoteClosed && departingCode && departingData && departingId) {
+    try {
+      const departingRef = doc(db, "rooms", departingCode);
+      if (departingData.phase === "lobby" && departingData.host !== departingId) {
+        await updateDoc(departingRef, { [`players.${departingId}`]: deleteField() });
+      } else {
+        await deleteDoc(departingRef);
+      }
+    } catch (e) { /* Room may already have been closed by another player. */ }
+  }
 }
 
 $("btn-copy").addEventListener("click", async () => {
@@ -346,11 +345,42 @@ const confirmLeave = () => {
 };
 $("btn-leave").addEventListener("click", confirmLeave);
 $("btn-leave-game").addEventListener("click", confirmLeave);
+$("btn-leave-party").addEventListener("click", confirmLeave);
 $("btn-end").addEventListener("click", confirmLeave);
 $("btn-stay").addEventListener("click", () => { $("leave-confirm").hidden = true; });
 $("btn-confirm-leave").addEventListener("click", () => {
   $("leave-confirm").hidden = true;
   leaveRoom();
+});
+
+function cancelSkip() {
+  const button = pendingSkip?.button;
+  pendingSkip = null;
+  $("skip-confirm").hidden = true;
+  if (button?.isConnected) button.focus();
+}
+$("btn-cancel-skip").addEventListener("click", cancelSkip);
+$("skip-confirm").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") cancelSkip();
+  if (event.key === "Tab") {
+    event.preventDefault();
+    (document.activeElement === $("btn-cancel-skip") ? $("btn-confirm-skip") : $("btn-cancel-skip")).focus();
+  }
+});
+$("btn-confirm-skip").addEventListener("click", async () => {
+  const request = pendingSkip;
+  pendingSkip = null;
+  $("skip-confirm").hidden = true;
+  if (!request || roomCode !== request.code || myPlayerId !== request.pid) return;
+  const oldDraft = draftClues[request.key];
+  delete draftClues[request.key];
+  try {
+    await skipSetupTransaction(db, doc(db, "rooms", request.code), request.pid, request.key, request);
+  } catch (err) {
+    if (oldDraft !== undefined) draftClues[request.key] = oldDraft;
+    alert(t("Failed: ", "שגיאה: ") + (err as Error).message);
+    render();
+  }
 });
 
 document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((button) => button.addEventListener("click", async () => {
@@ -373,8 +403,23 @@ document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((button) => 
 
 /* ---------- render ---------- */
 
+document.querySelectorAll<HTMLButtonElement>("[data-capacity], [data-scoring]").forEach((button) => button.addEventListener("click", async () => {
+  if (!myPlayerId || !roomData || roomData.phase !== "lobby") return;
+  try {
+    const ok = await configurePartyTransaction(db, ref(), myPlayerId, button.dataset.capacity
+      ? { maxPlayers: Number(button.dataset.capacity) }
+      : { scoringMode: button.dataset.scoring as ScoringMode });
+    if (!ok) alert(t("Room settings have changed. Please try again.", "הגדרות החדר השתנו, נסו שוב."));
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
+}));
+
 function render() {
   if (!roomData) return;
+  if (roomData.party) {
+    if (roomData.phase === "summary") renderSummary();
+    else renderParty();
+    return;
+  }
   if (roomData.phase === "lobby") renderLobby();
   else if (roomData.collective && roomData.phase === "setup") renderCollect();
   else if (roomData.collective && roomData.phase === "guess") renderGuess();
@@ -433,10 +478,13 @@ const turnTargetsDone = (d: RoomData): boolean => {
 
 function renderLobby() {
   show("lobby");
+  $("lobby-departure").hidden = !lobbyDeparture;
+  $("lobby-departure").textContent = lobbyDeparture ? t(`${lobbyDeparture} left the party.`, `${lobbyDeparture} עזב את המשחק.`) : "";
   $("lobby-code").textContent = roomData!.code;
   const list = $("lobby-players");
   const players = Object.values(roomData!.players);
-  const signature = JSON.stringify([getLang(), myPlayerId, players]);
+  const capacity = roomData!.maxPlayers ?? 2;
+  const signature = JSON.stringify([getLang(), myPlayerId, players, capacity]);
   if (list.dataset.players !== signature) {
     const previousIds = new Set(Array.from(list.querySelectorAll<HTMLElement>("[data-player]")).map((row) => row.dataset.player));
     list.replaceChildren();
@@ -455,7 +503,7 @@ function renderLobby() {
       row.append(avatar, name);
       list.append(row);
     });
-    if (players.length < 2) {
+    if (players.length < capacity) {
       const empty = document.createElement("div");
       empty.className = "player-seat-empty";
       const icon = document.createElement("span");
@@ -471,15 +519,31 @@ function renderLobby() {
   }
   const n = Object.values(roomData!.players).length;
   const isHost = roomData!.host === myPlayerId;
+  const partyFlow = usesPartyFlow(roomData!);
+  const competitive = roomData!.scoringMode === "competitive";
+  $("party-settings").hidden = !isHost;
+  document.querySelectorAll<HTMLButtonElement>("[data-capacity]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.capacity) === capacity));
+    button.disabled = Number(button.dataset.capacity) < n;
+  });
+  document.querySelectorAll<HTMLButtonElement>("[data-scoring]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.scoring === (roomData!.scoringMode ?? "cooperative")));
+  });
+  $("party-mode-note").textContent = partyFlow
+    ? t(`${n}/${capacity} players · ${competitive ? "Competitive" : "Together"} · one clue per player each round`, `${n}/${capacity} שחקנים · ${competitive ? "תחרותי" : "שיתופי"} · רמז אחד לכל שחקן בסיבוב`)
+    : t("Together · shared team score", "ביחד · ניקוד קבוצתי משותף");
+  $("party-scoring-help").textContent = competitive
+    ? t("Guessers earn 0–4 points. The clue giver earns their average. Everyone gives one clue per round. Ties share a rank.", "כל מנחש מקבל 0–4 נקודות. נותן הרמז מקבל את הממוצע שלהם. כל שחקן נותן רמז אחד בסיבוב. בתיקו חולקים מקום.")
+    : partyFlow ? t("The team earns the average of the guessers' points, up to 4 per question. Everyone gives one clue per round.", "הקבוצה מקבלת את ממוצע נקודות המנחשים, עד 4 לשאלה. כל שחקן נותן רמז אחד בסיבוב.") : t("Every successful guess adds to your shared score.", "כל ניחוש מוצלח מצטרף לניקוד המשותף.");
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
   start.disabled = n < 2;
-  start.textContent = n < 2 ? t(`Start game (${n}/2 players)`, `התחל משחק (${n}/2 שחקנים)`) : t("Start game", "התחל משחק");
+  start.textContent = n < 2 ? partyFlow ? t("Waiting for one more player…", "מחכים לעוד שחקן…") : t(`Start game (${n}/2 players)`, `התחל משחק (${n}/2 שחקנים)`) : t("Start game", "התחל משחק");
   $("lobby-waiting").hidden = n >= 2;
   $("lobby-note").hidden = isHost || n < 2;
   const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
   if (isHost) {
-    $("qpr-wrap").hidden = false;
+    $("qpr-wrap").hidden = partyFlow;
     $("lobby-qpr").hidden = true;
     ($("qpr-input") as HTMLInputElement).value = String(qpr);
     document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((option) => {
@@ -489,7 +553,7 @@ function renderLobby() {
     });
   } else {
     $("qpr-wrap").hidden = true;
-    $("lobby-qpr").hidden = false;
+    $("lobby-qpr").hidden = partyFlow;
     $("lobby-qpr").textContent = t(`Questions per round: ${qpr}`, `שאלות בסיבוב: ${qpr}`);
   }
   const cats = roomData!.categories?.length ? roomData!.categories : null;
@@ -500,11 +564,11 @@ function renderLobby() {
   if (isHost) {
     const toggle = $("collective-toggle") as HTMLInputElement;
     if (document.activeElement !== toggle) toggle.checked = collective;
-    $("collective-wrap").hidden = false;
+    $("collective-wrap").hidden = partyFlow;
     $("lobby-collective").hidden = true;
   } else {
     $("collective-wrap").hidden = true;
-    $("lobby-collective").hidden = false;
+    $("lobby-collective").hidden = partyFlow;
     $("lobby-collective").textContent = collective
       ? t("Party mode: clues first, guesses second", "מצב מסיבה: קודם רמזים, אחר כך ניחושים")
       : t("Classic mode: one question at a time", "מצב קלאסי: שאלה אחת בכל פעם");
@@ -514,6 +578,16 @@ function renderLobby() {
 function renderSummary() {
   show("summary");
   const d = roomData!;
+  if (d.party) {
+    $("summary-title").textContent = t(`Round ${Math.ceil(d.party.n / d.party.order.length)} complete!`, `סיבוב ${Math.ceil(d.party.n / d.party.order.length)} הסתיים!`);
+    $("summary-round").textContent = t("Everyone gave a clue. Ready for another round?", "כולם נתנו רמז. ממשיכים לסיבוב נוסף?");
+    $("summary-total").textContent = d.scoringMode === "competitive" ? t("The standings 🏆", "טבלת הניקוד 🏆") : t(`Team score: ${formatPoints(d.score)}`, `ניקוד קבוצתי: ${formatPoints(d.score)}`);
+    renderPartyStandings($("summary-standings"), d);
+    $("btn-continue").hidden = d.host !== myPlayerId;
+    $("summary-wait").hidden = d.host === myPlayerId;
+    return;
+  }
+  $("summary-standings").replaceChildren();
   const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
   const n = d.collective ? (d.setup ? Object.values(d.setup.q).length : 0) : (d.round?.n ?? 0);
   const group = d.collective ? (d.group ?? 1) : Math.max(1, Math.ceil(n / qpr));
@@ -530,7 +604,8 @@ function renderSummary() {
 $("btn-start").addEventListener("click", async () => {
   if (!roomData) return;
   try {
-    if (roomData.collective) await startCollectiveTransaction(db, ref());
+    if (usesPartyFlow(roomData)) await startPartyTransaction(db, ref(), myPlayerId!);
+    else if (roomData.collective) await startCollectiveTransaction(db, ref());
     else await startGameTransaction(db, ref());
   } catch (err) { alert(t("Failed to start: ", "שגיאה בהתחלה: ") + (err as Error).message); }
 });
@@ -596,6 +671,204 @@ const animateReveal = (el: HTMLElement, key: string, points: number) => {
     el.style.setProperty("--reveal-elapsed", `${-elapsed}ms`);
   }
 };
+
+const formatPoints = (value: number): string => new Intl.NumberFormat(getLang() === "he" ? "he-IL" : "en-US", { maximumFractionDigits: 1 }).format(value);
+
+function renderPartyStandings(list: HTMLElement, d: RoomData) {
+  list.replaceChildren();
+  if (d.scoringMode !== "competitive" || !d.party) return;
+  const ordered = [...d.party.order].sort((a, b) => d.party!.scores[b] - d.party!.scores[a]);
+  ordered.forEach((id) => {
+    const row = document.createElement("div");
+    row.className = "party-standing";
+    const rank = ordered.findIndex((other) => Math.abs(d.party!.scores[other] - d.party!.scores[id]) < 1e-9) + 1;
+    const name = document.createElement("span");
+    name.textContent = `${rank === 1 ? "🏆" : rank} ${safeAvatar(d.players[id].avatar)} ${d.players[id].name}`;
+    const points = document.createElement("b");
+    points.textContent = formatPoints(d.party!.scores[id]);
+    row.dataset.player = id;
+    row.append(name, points);
+    list.append(row);
+  });
+}
+
+async function runPartyAction(button: HTMLButtonElement, action: () => Promise<boolean>) {
+  button.dataset.busy = "true";
+  button.disabled = true;
+  try {
+    const ok = await action();
+    if (!ok) alert(t("The turn has changed. Please try again.", "התור השתנה, נסו שוב."));
+  } catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
+  finally {
+    delete button.dataset.busy;
+    if (roomData?.party && roomData.phase !== "summary") renderParty();
+  }
+}
+
+function renderParty() {
+  const d = roomData!;
+  const party = d.party!;
+  const r = party.round;
+  const me = myPlayerId!;
+  const giver = me === r.giver;
+  const locked = r.guesses[me] !== undefined;
+  const competitive = d.scoringMode === "competitive";
+  const guessers = party.order.filter((id) => id !== r.giver);
+  show("party");
+  $("party-code").textContent = `#${d.code}`;
+  $("party-score").textContent = competitive
+    ? t(`You: ${formatPoints(party.scores[me] ?? 0)}`, `הניקוד שלך: ${formatPoints(party.scores[me] ?? 0)}`)
+    : t(`Team: ${formatPoints(d.score)}`, `ביחד: ${formatPoints(d.score)}`);
+  $("party-progress").textContent = t(
+    `Round ${Math.ceil(party.n / party.order.length)} · clue ${(party.n - 1) % party.order.length + 1} of ${party.order.length} · ${d.players[r.giver].name} gives the clue`,
+    `סיבוב ${Math.ceil(party.n / party.order.length)} · רמז ${(party.n - 1) % party.order.length + 1} מתוך ${party.order.length} · ${d.players[r.giver].name} נותן רמז`,
+  );
+  setTurnStatus("party-status", d.phase === "reveal" ? "success" : ((d.phase === "clue" && giver) || (d.phase === "guess" && !giver && !locked)) ? "action" : "waiting",
+    d.phase === "reveal" ? t("Everyone locked — the reveal!", "כולם נעלו — חושפים!")
+      : d.phase === "clue" ? giver ? t("Your turn — write a clue", "התור שלך — כתבו רמז") : t(`Waiting for ${d.players[r.giver].name}'s clue…`, `מחכים לרמז של ${d.players[r.giver].name}…`)
+        : giver || locked ? t("Waiting for the other guesses…", "מחכים לשאר הניחושים…") : t("Place your arrow and lock it", "מקמו את החץ ונעלו ניחוש"));
+
+  const ready = $("party-ready");
+  ready.replaceChildren();
+  ready.hidden = d.phase !== "guess";
+  if (d.phase === "guess") {
+    guessers.forEach((id) => {
+      const chip = document.createElement("span");
+      chip.className = "ready-chip";
+      chip.dataset.locked = String(r.guesses[id] !== undefined);
+      chip.textContent = `${safeAvatar(d.players[id].avatar)} ${d.players[id].name} ${r.guesses[id] !== undefined ? "✓" : "…"}`;
+      ready.append(chip);
+    });
+  }
+  renderPartyStandings($("party-scores"), d);
+  const content = $("party-content");
+  const key = `${d.code}:${party.n}:${d.phase}:${getLang()}:${me}`;
+  // Remote locks update readiness without replacing the active clue/range input.
+  if (content.dataset.key !== key) {
+    content.dataset.key = key;
+    content.replaceChildren();
+    const c = card();
+    specLabels(c, r.left, r.right, r.leftHe, r.rightHe);
+    if (r.clue) clueBox(c, r.clue);
+    if (d.phase === "clue" && giver) {
+      miniDial(c, "target", r.target);
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = t(`Secret target: ${r.target}`, `המטרה הסודית: ${r.target}`);
+      const form = document.createElement("form");
+      const input = document.createElement("input");
+      input.id = "party-clue";
+      input.maxLength = 60;
+      input.placeholder = t("A clue for everyone…", "רמז לכולם…");
+      input.setAttribute("aria-label", t("Your clue", "הרמז שלך"));
+      const send = document.createElement("button");
+      send.id = "party-send";
+      send.className = "btn primary";
+      send.textContent = t("Send clue", "שלחו רמז");
+      send.disabled = true;
+      input.addEventListener("input", () => { send.disabled = !input.value.trim() || !!send.dataset.busy; });
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!send.disabled) void runPartyAction(send, () => sendPartyClueTransaction(db, ref(), me, party.n, input.value));
+      });
+      form.append(input, send);
+      c.append(hint, form);
+    } else if (d.phase === "guess" && !giver) {
+      const { bar, marker } = miniDial(c, "arrow", r.guesses[me] ?? 50);
+      const slider = document.createElement("input");
+      slider.id = "party-guess";
+      slider.type = "range";
+      slider.min = "0";
+      slider.max = "100";
+      slider.step = "1";
+      slider.value = String(r.guesses[me] ?? 50);
+      slider.setAttribute("aria-label", t("Your guess", "הניחוש שלך"));
+      const value = document.createElement("p");
+      value.id = "party-guess-value";
+      value.className = "hint";
+      const sync = () => {
+        setPos(marker, Number(slider.value));
+        value.textContent = t(`Your guess: ${slider.value}`, `הניחוש שלך: ${slider.value}`);
+      };
+      slider.addEventListener("input", sync);
+      const pointer = (event: PointerEvent) => {
+        if (slider.disabled) return;
+        const rect = bar.getBoundingClientRect();
+        slider.value = String(Math.max(0, Math.min(100, Math.round((event.clientX - rect.left) / rect.width * 100))));
+        sync();
+      };
+      bar.addEventListener("pointerdown", (event) => { if (!slider.disabled) { bar.setPointerCapture(event.pointerId); pointer(event); } });
+      bar.addEventListener("pointermove", (event) => { if (bar.hasPointerCapture(event.pointerId)) pointer(event); });
+      sync();
+      const lock = document.createElement("button");
+      lock.id = "party-lock";
+      lock.className = "btn primary";
+      lock.addEventListener("click", () => { void runPartyAction(lock, () => lockPartyGuessTransaction(db, ref(), me, party.n, Number(slider.value))); });
+      c.append(slider, value, lock);
+    } else if (d.phase === "reveal") {
+      const dial = document.createElement("div");
+      dial.className = "dial party-reveal";
+      const bar = document.createElement("div");
+      bar.className = "dial-bar";
+      guessers.forEach((id, index) => {
+        const marker = document.createElement("span");
+        marker.className = "marker player-guess";
+        marker.textContent = safeAvatar(d.players[id].avatar);
+        marker.title = `${d.players[id].name}: ${r.guesses[id]}`;
+        marker.style.top = `${24 + index * 12}%`;
+        setPos(marker, r.guesses[id]);
+        bar.append(marker);
+      });
+      const target = document.createElement("span");
+      target.className = "marker target reveal";
+      setPos(target, r.target);
+      bar.append(target);
+      dial.append(bar);
+      c.append(dial);
+      const points = document.createElement("div");
+      points.className = "q-pts party-results";
+      const targetLabel = document.createElement("p");
+      targetLabel.textContent = t(`Target: ${r.target}`, `המטרה: ${r.target}`);
+      points.append(targetLabel);
+      (competitive ? party.order : guessers).forEach((id) => {
+        const row = document.createElement("p");
+        row.dataset.player = id;
+        row.textContent = `${safeAvatar(d.players[id].avatar)} ${d.players[id].name}: ${id === r.giver ? t("clue bonus", "בונוס רמז") : r.guesses[id]} · +${formatPoints(party.awards[id])}`;
+        points.append(row);
+      });
+      if (!competitive) {
+        const team = document.createElement("p");
+        team.textContent = t(`Together: +${formatPoints(party.awards[r.giver])}`, `ביחד: +${formatPoints(party.awards[r.giver])}`);
+        points.append(team);
+      }
+      c.append(points);
+      animateReveal(c, `${d.code}:party:${party.n}`, party.awards[r.giver] === 4 ? 4 : 0);
+      if (d.host === me) {
+        const next = document.createElement("button");
+        next.id = "party-next";
+        next.className = "btn primary";
+        next.textContent = party.n % party.order.length === 0 ? t("Round results", "סיכום סיבוב") : t("Next clue", "הרמז הבא");
+        next.addEventListener("click", () => { void runPartyAction(next, () => advancePartyTransaction(db, ref(), me, party.n)); });
+        c.append(next);
+      }
+    } else {
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = d.phase === "clue" ? t("The target is secret. Your clue is on its way…", "המטרה סודית. עוד רגע מגיע הרמז…") : t("Watch who has locked their guess below.", "אפשר לראות למטה מי כבר נעל ניחוש.");
+      c.append(hint);
+    }
+    content.append(c);
+  }
+  const slider = document.getElementById("party-guess") as HTMLInputElement | null;
+  const lock = document.getElementById("party-lock") as HTMLButtonElement | null;
+  if (slider && lock) {
+    slider.disabled = locked || !!lock.dataset.busy;
+    lock.disabled = locked || !!lock.dataset.busy;
+    lock.textContent = locked ? t("Guess locked ✓", "הניחוש ננעל ✓") : t("Lock guess", "נעילת ניחוש");
+  }
+  const send = document.getElementById("party-send") as HTMLButtonElement | null;
+  if (send) send.disabled = !!send.dataset.busy || !(document.getElementById("party-clue") as HTMLInputElement).value.trim();
+}
 
 const revealDial = (c: HTMLElement, target: number, guess: number) => {
   const dial = document.createElement("div");
@@ -721,9 +994,10 @@ function renderCollect() {
     skip.className = "btn";
     skip.textContent = t("Skip", "דלג");
     skip.disabled = skips <= 0;
-    skip.addEventListener("click", async () => {
-      try { await skipSetupTransaction(db, ref(), myPlayerId!, key); }
-      catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
+    skip.addEventListener("click", () => {
+      pendingSkip = { code: d.code, pid: myPlayerId!, key, startedAt: st.startedAt, idx: it.idx, button: skip };
+      $("skip-confirm").hidden = false;
+      $("btn-cancel-skip").focus();
     });
     actions.append(skip);
     c.append(input, actions);
@@ -1002,6 +1276,11 @@ function renderGame() {
 $("btn-continue").addEventListener("click", async () => {
   const d = roomData;
   if (!d) return;
+  if (d.party) {
+    try { await advancePartyTransaction(db, ref(), myPlayerId!, d.party.n, "summary"); }
+    catch (err) { alert(t("Failed: ", "שגיאה: ") + (err as Error).message); }
+    return;
+  }
   const n = d.round?.n ?? (d.collective ? 0 : null);
   if (n == null) return;
   try {

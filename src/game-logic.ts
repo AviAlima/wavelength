@@ -36,6 +36,9 @@ export interface RoomData {
   collective?: boolean;
   setup?: SetupState;
   group?: number;
+  maxPlayers?: number;
+  scoringMode?: import("./party-logic.js").ScoringMode;
+  party?: import("./party-logic.js").PartyState;
 }
 
 export interface SetupItem {
@@ -170,6 +173,7 @@ export const skipSetupTransaction = async (
   roomRef: DocumentReference,
   pid: string,
   key: string,
+  expected?: { startedAt: number; idx: number },
 ): Promise<boolean> => {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(roomRef);
@@ -178,6 +182,7 @@ export const skipSetupTransaction = async (
     const ps = data.setup.byPlayer[pid];
     const item = data.setup.q[key];
     if (!ps || ps.skips <= 0 || !item || item.by !== pid) return false;
+    if (expected && (data.setup.startedAt !== expected.startedAt || item.idx !== expected.idx)) return false;
     const used = new Set(data.usedSpectra ?? []);
     setupQList(data.setup.q).forEach((it) => used.add(it.idx));
     const pick = pickSpectrumIndex([...used], poolFor(data.categories));

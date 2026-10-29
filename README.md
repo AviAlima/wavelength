@@ -1,7 +1,22 @@
-# Wavelength (2-player, two devices)
+# Wavelength (2–6 players)
 
-A simple real-time Wavelength game for two people on separate phones. No backend code —
+A real-time Wavelength game for friends on separate phones. No backend code —
 Firebase Firestore does the sync. Hosted on GitHub Pages. Written in TypeScript, built with esbuild.
+
+## Party settings
+
+The host chooses a room size (2–6) and scoring mode in the lobby before starting.
+Two-player cooperative rooms retain the original up-front/classic options.
+Larger rooms and competitive rooms use a shared clue, individual guesses, and a simultaneous reveal after everyone locks.
+
+- Cooperative: the team earns the mean guesser score, up to 4 points per question.
+- Competitive: each guesser earns 0–4 points; the clue giver earns their mean. Fractional points accumulate without rounding and display to one decimal place. Equal scores share a rank.
+- A party round gives every player one turn as clue giver. Scores carry into the next round.
+- Joining, final-guess scoring, and advancing turns use transactions so concurrent actions do not overfill rooms or award points twice.
+- Spectrum skips ask for confirmation; cancelling keeps both the question and the skip allowance.
+- Leaving a running game closes the room and only notifies the remaining players. A lobby guest can leave without closing the room.
+
+Run `npm run test:party` for scoring checks, and `npm run e2e` for multiplayer and existing two-player browser tests. Deployment waits for these checks.
 
 ## Setup (5 minutes)
 

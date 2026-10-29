@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css?v=1.20.0">
+<link rel="stylesheet" href="css/style.css?v=1.21.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -85,7 +85,25 @@
       </div>
       <h2 data-i18n="players">Players</h2>
       <div id="lobby-players"></div>
+      <p id="lobby-departure" class="hint" role="status" hidden></p>
       <p id="lobby-waiting" class="hint" data-i18n="lobby-waiting">Waiting for a second player…<br>Share the code above.</p>
+      <fieldset id="party-settings" class="lobby-setting" hidden>
+        <legend data-i18n="party-settings-title">Your party</legend>
+        <p class="setting-title" data-i18n="party-capacity">Room size</p>
+        <div class="party-options" role="group" aria-label="Room size">
+          <button type="button" class="chip-btn" data-capacity="2">2</button>
+          <button type="button" class="chip-btn" data-capacity="3">3</button>
+          <button type="button" class="chip-btn" data-capacity="4">4</button>
+          <button type="button" class="chip-btn" data-capacity="5">5</button>
+          <button type="button" class="chip-btn" data-capacity="6">6</button>
+        </div>
+        <p class="setting-title" data-i18n="party-scoring">Scoring</p>
+        <div class="party-options scoring-options" role="group" aria-label="Scoring">
+          <button type="button" class="chip-btn" data-scoring="cooperative" data-i18n="party-coop">Together 🤝</button>
+          <button type="button" class="chip-btn" data-scoring="competitive" data-i18n="party-compete">Competitive 🏆</button>
+        </div>
+      </fieldset>
+      <p id="party-mode-note" class="hint small-hint"></p>
       <div class="lobby-setting" id="qpr-wrap" hidden>
         <div class="setting-title"><span aria-hidden="true">⚡</span><span data-i18n="qpr-label">Round length</span></div>
         <input id="qpr-input" type="hidden" value="6">
@@ -110,6 +128,7 @@
       <button id="btn-start" class="btn primary" hidden disabled>Start game (waiting…)</button>
       <details class="game-help">
         <summary data-i18n="how-it-works">How does it work?</summary>
+        <p id="party-scoring-help"></p>
         <p data-i18n="collective-hint">Like the original game: everyone writes clues first, then you guess each other's targets.</p>
         <p data-i18n="rules-hint">The closer the guess, the more points you score.</p>
       </details>
@@ -185,11 +204,27 @@
     </div>
   </section>
 
+  <section id="screen-party" class="screen" hidden>
+    <header class="game-header">
+      <span id="party-code" class="code-chip small" dir="ltr"></span>
+      <span id="party-score" class="score-chip"></span>
+    </header>
+    <div class="card game-card">
+      <div id="party-status" class="turn-status" role="status" aria-live="polite"></div>
+      <p id="party-progress" class="round-info"></p>
+      <div id="party-content"></div>
+      <div id="party-ready" class="party-ready" aria-live="polite"></div>
+      <div id="party-scores"></div>
+      <button id="btn-leave-party" class="btn ghost" data-i18n="btn-leave">Leave party</button>
+    </div>
+  </section>
+
   <section id="screen-summary" class="screen" hidden>
     <div class="card">
       <h2 id="summary-title">Round complete!</h2>
       <p class="hint" id="summary-round"></p>
       <p class="points" id="summary-total"></p>
+      <div id="summary-standings"></div>
       <button id="btn-continue" class="btn primary" hidden data-i18n="btn-continue">Continue playing</button>
       <p id="summary-wait" class="hint" hidden data-i18n="summary-wait">Waiting for the host…</p>
       <button id="btn-end" class="btn ghost" data-i18n="btn-end">End game</button>
@@ -212,6 +247,16 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js?v=1.20.0"></script>
+<div id="skip-confirm" class="modal" role="dialog" aria-modal="true" aria-labelledby="skip-confirm-title" hidden>
+  <div class="modal-card card">
+    <h2 id="skip-confirm-title" data-i18n="skip-confirm-title">Skip this spectrum?</h2>
+    <p class="hint" data-i18n="skip-confirm-hint">A new spectrum will replace it and use one skip.</p>
+    <div class="card-actions">
+      <button id="btn-cancel-skip" class="btn" type="button" data-i18n="skip-cancel">Keep it</button>
+      <button id="btn-confirm-skip" class="btn primary" type="button" data-i18n="skip-yes">Yes, skip</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/game.js?v=1.21.0"></script>
 </body>
 </html>
