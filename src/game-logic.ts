@@ -30,6 +30,7 @@ export interface RoomData {
   score: number;
   round: Round | null;
   questionsPerRound?: number;
+  questionsPerPlayer?: number;
   roundScore?: number;
   usedSpectra?: number[];
   categories?: string[];
@@ -93,6 +94,10 @@ const dealItems = (qpr: number, used: number[], categories: string[] | undefined
 };
 
 export const DEFAULT_QUESTIONS_PER_ROUND = 6;
+export const DEFAULT_QUESTIONS_PER_PLAYER = 3;
+export const roundQuestionCount = (room: RoomData): number => room.questionsPerPlayer !== undefined
+  ? Math.max(1, Math.min(5, Math.trunc(room.questionsPerPlayer))) * Object.keys(room.players).length
+  : room.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
 export const MAX_SKIPS = 2;
 
 export const pointsFor = (target: number, guess: number): number => {
@@ -159,7 +164,7 @@ export const startCollectiveTransaction = async (db: Firestore, roomRef: Documen
     if (!snap.exists() || !data || data.phase !== "lobby") return null;
     const pids = Object.keys(data.players);
     if (pids.length < 2) return null;
-    const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+    const qpr = roundQuestionCount(data);
     const firstId = pids.find((p) => p !== data.host)!;
     const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, firstId, pids);
     const setup = freshSetup(deal.q, pids);
@@ -302,7 +307,7 @@ export const nextRoundTransaction = async (
     const pts = pointsFor(r.target, r.guess);
     const score = data.score + pts;
     const roundScore = (data.roundScore ?? 0) + pts;
-    const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+    const qpr = roundQuestionCount(data);
     if (r.n % qpr === 0) {
       tx.update(roomRef, { score, roundScore, phase: "summary" });
       return { points: pts, round: r, ended: true };
@@ -327,7 +332,7 @@ export const continueTransaction = async (
     if (data.collective) {
       const pids = Object.keys(data.players);
       if (pids.length < 2) return null;
-      const qpr = data.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+      const qpr = roundQuestionCount(data);
       const firstId = pids.find((p) => p !== data.host)!;
       const deal = dealItems(qpr, data.usedSpectra ?? [], data.categories, firstId, pids);
       const setup = freshSetup(deal.q, pids);

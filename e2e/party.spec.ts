@@ -21,6 +21,9 @@ for (const mode of ["cooperative", "competitive"] as const) {
     try {
       await Promise.all(pages.map((p, i) => openHome(p, `Player${i + 1}`)));
       code = await createRoom(host);
+      const cluesEach = mode === "cooperative" ? 2 : 1;
+      await host.locator(`.qpr-option[data-value="${cluesEach}"]`).click();
+      await expect(host.locator("#qpr-input")).toHaveValue(String(cluesEach));
       await host.locator(`[data-capacity="${size}"]`).click();
       await expect(host.locator(`[data-capacity="${size}"]`)).toHaveAttribute("aria-pressed", "true");
       await host.locator(`[data-scoring="${mode}"]`).click();
@@ -45,12 +48,14 @@ for (const mode of ["cooperative", "competitive"] as const) {
       const before = await read();
       const ids = pages.map((_, i) => Object.keys(before.players.mapValue.fields).find((id) => before.players.mapValue.fields[id].mapValue.fields.name.stringValue === `Player${i + 1}`)!);
       await host.click("#btn-start");
-      // Full 3-player cooperative lap; six-player competitive checks concurrent locks.
-      const turns = mode === "cooperative" ? size : 1;
+      // Two complete rotations verify each giver receives two clues.
+      const turns = mode === "cooperative" ? size * cluesEach : 1;
+      const clueCounts = Object.fromEntries(ids.map((id) => [id, 0]));
       for (let turn = 0; turn < turns; turn++) {
         await expect(host.locator("#party-progress")).toContainText(`clue ${turn + 1} of`);
         const state = await read();
         const giverId = state.party.mapValue.fields.round.mapValue.fields.giver.stringValue;
+        clueCounts[giverId]++;
         const giver = pages[ids.indexOf(giverId)];
         await expect(giver.locator("#party-clue")).toBeVisible();
         const target = Number(state.party.mapValue.fields.round.mapValue.fields.target.integerValue);
@@ -87,6 +92,7 @@ for (const mode of ["cooperative", "competitive"] as const) {
         }
       }
       if (mode === "cooperative") {
+        expect(Object.values(clueCounts)).toEqual([2, 2, 2]);
         await expect(host.locator("#screen-summary")).toBeVisible();
         await host.click("#btn-continue");
         await expect(host.locator("#party-clue")).toHaveValue("");
@@ -98,3 +104,35 @@ for (const mode of ["cooperative", "competitive"] as const) {
     }
   });
 }
+
+test("competitive requires three actual players and resets when room size becomes two", async ({ browser }) => {
+  const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext()));
+  const pages = await Promise.all(contexts.map((ctx) => ctx.newPage()));
+  const host = pages[0];
+  let code: string | undefined;
+  try {
+    await Promise.all(pages.map((p, i) => openHome(p, `Player${i}`)));
+    code = await createRoom(host);
+    await expect(host.locator(".qpr-option")).toHaveText(["1", "2", "3", "4", "5"]);
+    await expect(host.locator('[data-scoring="competitive"]')).toBeDisabled();
+    await host.click('[data-capacity="3"]');
+    await expect(host.locator('[data-scoring="competitive"]')).toBeEnabled();
+    await host.click('[data-scoring="competitive"]');
+    await expect(host.locator('[data-scoring="competitive"]')).toHaveAttribute("aria-pressed", "true");
+    await host.click('[data-capacity="2"]');
+    await expect(host.locator('[data-scoring="cooperative"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(host.locator('[data-scoring="competitive"]')).toBeDisabled();
+    await host.click('[data-capacity="3"]');
+    await expect(host.locator('[data-scoring="competitive"]')).toBeEnabled();
+    await host.click('[data-scoring="competitive"]');
+    await expect(host.locator('[data-scoring="competitive"]')).toHaveAttribute("aria-pressed", "true");
+    await joinRoom(pages[1], code);
+    await expect(host.locator(".player-row")).toHaveCount(2);
+    await expect(host.locator("#btn-start")).toBeDisabled();
+    await joinRoom(pages[2], code);
+    await expect(host.locator("#btn-start")).toBeEnabled();
+  } finally {
+    if (code) await deleteRoom(code);
+    await Promise.all(contexts.map((ctx) => ctx.close()));
+  }
+});

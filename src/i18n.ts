@@ -52,7 +52,8 @@ export const STRINGS: Record<string, { en: string; he: string }> = {
   "btn-copy": { en: "Copy", he: "העתקה" },
   players: { en: "Players", he: "שחקנים" },
   "lobby-waiting": { en: "Waiting for a second player…<br>Share the code above.", he: "מחכים לשחקן שני…<br>שתפו את הקוד למעלה." },
-  "qpr-label": { en: "Round length", he: "כמה שאלות בסיבוב?" },
+  "qpr-label": { en: "Clues per player", he: "כמה רמזים לכל שחקן?" },
+  "competitive-note": { en: "Competitive scoring needs at least 3 players.", he: "מצב תחרותי זמין משלושה שחקנים ומעלה." },
   "collective-label": { en: "All spectra up front", he: "כל הספקטרומים מראש" },
   "collective-hint": {
     en: "Everyone writes their clues first. Then you take turns guessing each other's targets. Turn it off for one question at a time.",

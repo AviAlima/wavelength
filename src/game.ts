@@ -1,12 +1,12 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, initializeFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, deleteField } from "firebase/firestore";
 import { firebaseConfig } from "./firebase-config.js";
-import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_ROUND, type RoomData, type SetupItem } from "./game-logic.js";
+import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransaction, startCollectiveTransaction, skipSetupTransaction, setupDoneTransaction, guessTurnTransaction, reviewNextTransaction, reviewSkipTransaction, allCluesDone, setupQList, MAX_SKIPS, DEFAULT_QUESTIONS_PER_PLAYER, roundQuestionCount, type RoomData, type SetupItem } from "./game-logic.js";
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
-import { usesPartyFlow, configurePartyTransaction, joinPlayerTransaction, startPartyTransaction, sendPartyClueTransaction, lockPartyGuessTransaction, advancePartyTransaction, type ScoringMode } from "./party-logic.js";
+import { usesPartyFlow, partyQuestionCount, configurePartyTransaction, joinPlayerTransaction, startPartyTransaction, sendPartyClueTransaction, lockPartyGuessTransaction, advancePartyTransaction, type ScoringMode } from "./party-logic.js";
 
-const VERSION = "1.21.0";
+const VERSION = "1.21.1";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -229,7 +229,7 @@ async function createRoom(categories: string[]) {
       players: { [id]: { id, name: myName(), color: COLORS[0], avatar: myAvatar } },
       phase: "lobby",
       score: 0,
-      questionsPerRound: 6,
+      questionsPerPlayer: DEFAULT_QUESTIONS_PER_PLAYER,
       collective: true,
       maxPlayers: 2,
       scoringMode: "cooperative",
@@ -385,14 +385,9 @@ $("btn-confirm-skip").addEventListener("click", async () => {
 
 document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((button) => button.addEventListener("click", async () => {
   const v = Number(button.dataset.value);
-  ($("qpr-input") as HTMLInputElement).value = String(v);
-  document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((option) => {
-    const selected = option === button;
-    option.classList.toggle("selected", selected);
-    option.setAttribute("aria-pressed", String(selected));
-  });
-  if (!roomCode) return;
-  try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
+  if (!roomCode || !myPlayerId) return;
+  try { await configurePartyTransaction(db, ref(), myPlayerId, { questionsPerPlayer: v }); }
+  catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
 }));
 
 ($("collective-toggle") as HTMLInputElement).addEventListener("change", async () => {
@@ -521,6 +516,7 @@ function renderLobby() {
   const isHost = roomData!.host === myPlayerId;
   const partyFlow = usesPartyFlow(roomData!);
   const competitive = roomData!.scoringMode === "competitive";
+  const minimumPlayers = competitive ? 3 : 2;
   $("party-settings").hidden = !isHost;
   document.querySelectorAll<HTMLButtonElement>("[data-capacity]").forEach((button) => {
     button.setAttribute("aria-pressed", String(Number(button.dataset.capacity) === capacity));
@@ -528,22 +524,26 @@ function renderLobby() {
   });
   document.querySelectorAll<HTMLButtonElement>("[data-scoring]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.scoring === (roomData!.scoringMode ?? "cooperative")));
+    button.disabled = button.dataset.scoring === "competitive" && capacity < 3;
   });
+  $("competitive-note").hidden = capacity >= 3;
   $("party-mode-note").textContent = partyFlow
-    ? t(`${n}/${capacity} players · ${competitive ? "Competitive" : "Together"} · one clue per player each round`, `${n}/${capacity} שחקנים · ${competitive ? "תחרותי" : "שיתופי"} · רמז אחד לכל שחקן בסיבוב`)
+    ? t(`${n}/${capacity} players · ${competitive ? "Competitive" : "Together"}`, `${n}/${capacity} שחקנים · ${competitive ? "תחרותי" : "שיתופי"}`)
     : t("Together · shared team score", "ביחד · ניקוד קבוצתי משותף");
   $("party-scoring-help").textContent = competitive
-    ? t("Guessers earn 0–4 points. The clue giver earns their average. Everyone gives one clue per round. Ties share a rank.", "כל מנחש מקבל 0–4 נקודות. נותן הרמז מקבל את הממוצע שלהם. כל שחקן נותן רמז אחד בסיבוב. בתיקו חולקים מקום.")
-    : partyFlow ? t("The team earns the average of the guessers' points, up to 4 per question. Everyone gives one clue per round.", "הקבוצה מקבלת את ממוצע נקודות המנחשים, עד 4 לשאלה. כל שחקן נותן רמז אחד בסיבוב.") : t("Every successful guess adds to your shared score.", "כל ניחוש מוצלח מצטרף לניקוד המשותף.");
+    ? t("Guessers earn 0–4 points. The clue giver earns their average. Everyone gives the same number of clues. Ties share a rank.", "כל מנחש מקבל 0–4 נקודות. נותן הרמז מקבל את הממוצע שלהם. כולם נותנים אותו מספר רמזים. בתיקו חולקים מקום.")
+    : partyFlow ? t("The team earns the average of the guessers' points, up to 4 per question. Everyone gives the same number of clues.", "הקבוצה מקבלת את ממוצע נקודות המנחשים, עד 4 לשאלה. כולם נותנים אותו מספר רמזים.") : t("Every successful guess adds to your shared score.", "כל ניחוש מוצלח מצטרף לניקוד המשותף.");
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
-  start.disabled = n < 2;
-  start.textContent = n < 2 ? partyFlow ? t("Waiting for one more player…", "מחכים לעוד שחקן…") : t(`Start game (${n}/2 players)`, `התחל משחק (${n}/2 שחקנים)`) : t("Start game", "התחל משחק");
-  $("lobby-waiting").hidden = n >= 2;
-  $("lobby-note").hidden = isHost || n < 2;
-  const qpr = roomData!.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  start.disabled = n < minimumPlayers;
+  start.textContent = n < minimumPlayers ? t(`Waiting for ${minimumPlayers - n} more…`, `מחכים לעוד ${minimumPlayers - n}…`) : t("Start game", "התחל משחק");
+  $("lobby-waiting").hidden = n >= minimumPlayers;
+  $("lobby-note").hidden = isHost || n < minimumPlayers;
+  const qpr = roomData!.questionsPerPlayer ?? DEFAULT_QUESTIONS_PER_PLAYER;
+  const previewPlayers = Math.max(minimumPlayers, n);
+  $("qpr-total").textContent = t(`${qpr} clues each · ${qpr * previewPlayers} questions for ${previewPlayers} players`, `${qpr} רמזים לכל שחקן · ${qpr * previewPlayers} שאלות ל־${previewPlayers} שחקנים`);
   if (isHost) {
-    $("qpr-wrap").hidden = partyFlow;
+    $("qpr-wrap").hidden = false;
     $("lobby-qpr").hidden = true;
     ($("qpr-input") as HTMLInputElement).value = String(qpr);
     document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((option) => {
@@ -553,8 +553,8 @@ function renderLobby() {
     });
   } else {
     $("qpr-wrap").hidden = true;
-    $("lobby-qpr").hidden = partyFlow;
-    $("lobby-qpr").textContent = t(`Questions per round: ${qpr}`, `שאלות בסיבוב: ${qpr}`);
+    $("lobby-qpr").hidden = false;
+    $("lobby-qpr").textContent = t(`Clues per player: ${qpr}`, `רמזים לכל שחקן: ${qpr}`);
   }
   const cats = roomData!.categories?.length ? roomData!.categories : null;
   $("lobby-cats").textContent = cats
@@ -579,8 +579,8 @@ function renderSummary() {
   show("summary");
   const d = roomData!;
   if (d.party) {
-    $("summary-title").textContent = t(`Round ${Math.ceil(d.party.n / d.party.order.length)} complete!`, `סיבוב ${Math.ceil(d.party.n / d.party.order.length)} הסתיים!`);
-    $("summary-round").textContent = t("Everyone gave a clue. Ready for another round?", "כולם נתנו רמז. ממשיכים לסיבוב נוסף?");
+    $("summary-title").textContent = t(`Round ${Math.ceil(d.party.n / partyQuestionCount(d))} complete!`, `סיבוב ${Math.ceil(d.party.n / partyQuestionCount(d))} הסתיים!`);
+    $("summary-round").textContent = t(`${d.questionsPerPlayer ?? 1} clues each · ${partyQuestionCount(d)} questions completed`, `${d.questionsPerPlayer ?? 1} רמזים לכל שחקן · ${partyQuestionCount(d)} שאלות הושלמו`);
     $("summary-total").textContent = d.scoringMode === "competitive" ? t("The standings 🏆", "טבלת הניקוד 🏆") : t(`Team score: ${formatPoints(d.score)}`, `ניקוד קבוצתי: ${formatPoints(d.score)}`);
     renderPartyStandings($("summary-standings"), d);
     $("btn-continue").hidden = d.host !== myPlayerId;
@@ -588,7 +588,7 @@ function renderSummary() {
     return;
   }
   $("summary-standings").replaceChildren();
-  const qpr = d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND;
+  const qpr = roundQuestionCount(d);
   const n = d.collective ? (d.setup ? Object.values(d.setup.q).length : 0) : (d.round?.n ?? 0);
   const group = d.collective ? (d.group ?? 1) : Math.max(1, Math.ceil(n / qpr));
   $("summary-title").textContent = t(`Round ${group} complete!`, `סיבוב ${group} הסתיים!`);
@@ -604,6 +604,10 @@ function renderSummary() {
 $("btn-start").addEventListener("click", async () => {
   if (!roomData) return;
   try {
+    if (roomData.questionsPerPlayer === undefined) {
+      const saved = await configurePartyTransaction(db, ref(), myPlayerId!, { questionsPerPlayer: DEFAULT_QUESTIONS_PER_PLAYER });
+      if (!saved) return;
+    }
     if (usesPartyFlow(roomData)) await startPartyTransaction(db, ref(), myPlayerId!);
     else if (roomData.collective) await startCollectiveTransaction(db, ref());
     else await startGameTransaction(db, ref());
@@ -720,8 +724,8 @@ function renderParty() {
     ? t(`You: ${formatPoints(party.scores[me] ?? 0)}`, `הניקוד שלך: ${formatPoints(party.scores[me] ?? 0)}`)
     : t(`Team: ${formatPoints(d.score)}`, `ביחד: ${formatPoints(d.score)}`);
   $("party-progress").textContent = t(
-    `Round ${Math.ceil(party.n / party.order.length)} · clue ${(party.n - 1) % party.order.length + 1} of ${party.order.length} · ${d.players[r.giver].name} gives the clue`,
-    `סיבוב ${Math.ceil(party.n / party.order.length)} · רמז ${(party.n - 1) % party.order.length + 1} מתוך ${party.order.length} · ${d.players[r.giver].name} נותן רמז`,
+    `Round ${Math.ceil(party.n / partyQuestionCount(d))} · clue ${(party.n - 1) % partyQuestionCount(d) + 1} of ${partyQuestionCount(d)} · ${d.players[r.giver].name} gives the clue`,
+    `סיבוב ${Math.ceil(party.n / partyQuestionCount(d))} · רמז ${(party.n - 1) % partyQuestionCount(d) + 1} מתוך ${partyQuestionCount(d)} · ${d.players[r.giver].name} נותן רמז`,
   );
   setTurnStatus("party-status", d.phase === "reveal" ? "success" : ((d.phase === "clue" && giver) || (d.phase === "guess" && !giver && !locked)) ? "action" : "waiting",
     d.phase === "reveal" ? t("Everyone locked — the reveal!", "כולם נעלו — חושפים!")
@@ -847,7 +851,7 @@ function renderParty() {
         const next = document.createElement("button");
         next.id = "party-next";
         next.className = "btn primary";
-        next.textContent = party.n % party.order.length === 0 ? t("Round results", "סיכום סיבוב") : t("Next clue", "הרמז הבא");
+        next.textContent = party.n % partyQuestionCount(d) === 0 ? t("Round results", "סיכום סיבוב") : t("Next clue", "הרמז הבא");
         next.addEventListener("click", () => { void runPartyAction(next, () => advancePartyTransaction(db, ref(), me, party.n)); });
         c.append(next);
       }
@@ -1216,7 +1220,7 @@ function renderGame() {
   $("game-code").textContent = d.code;
   $("score").textContent = chipScore(d);
   $("round-num").textContent = String(r.n);
-  $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND))));
+  $("round-group").textContent = String(Math.max(1, Math.ceil(r.n / roundQuestionCount(d))));
   $("round-info").textContent = t(`${d.players[r.giver].name} gives the clue${isGiver ? " — that's you" : ""}`, `${d.players[r.giver].name} נותן רמז${isGiver ? " — זה אתה" : ""}`);
   $("spec-left").textContent = langLabel(r.left, r.leftHe);
   $("spec-right").textContent = langLabel(r.right, r.rightHe);
@@ -1270,7 +1274,7 @@ function renderGame() {
     $("guess-dial").hidden = !guessPhase;
   }
   $("reveal-panel").hidden = !revealPhase;
-  $("btn-next").textContent = (r.n % (d.questionsPerRound ?? DEFAULT_QUESTIONS_PER_ROUND) === 0) ? t("Finish round", "סיום סיבוב") : t("Next question", "שאלה הבאה");
+  $("btn-next").textContent = (r.n % roundQuestionCount(d) === 0) ? t("Finish round", "סיום סיבוב") : t("Next question", "שאלה הבאה");
 }
 
 $("btn-continue").addEventListener("click", async () => {

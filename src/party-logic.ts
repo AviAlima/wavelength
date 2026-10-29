@@ -11,6 +11,7 @@ export interface PartyState {
 }
 
 export const usesPartyFlow = (room: RoomData): boolean => (room.maxPlayers ?? 2) > 2 || room.scoringMode === "competitive";
+export const partyQuestionCount = (room: RoomData): number => (room.party?.order.length ?? Object.keys(room.players).length) * (room.questionsPerPlayer ?? 1);
 
 export function scorePartyRound(order: string[], giver: string, target: number, guesses: Record<string, number>) {
   const guessers = order.filter((id) => id !== giver);
@@ -36,7 +37,7 @@ export async function joinPlayerTransaction(db: Firestore, ref: DocumentReferenc
   });
 }
 
-export async function configurePartyTransaction(db: Firestore, ref: DocumentReference, pid: string, changes: { maxPlayers?: number; scoringMode?: ScoringMode }) {
+export async function configurePartyTransaction(db: Firestore, ref: DocumentReference, pid: string, changes: { maxPlayers?: number; scoringMode?: ScoringMode; questionsPerPlayer?: number }) {
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) return false;
@@ -44,7 +45,9 @@ export async function configurePartyTransaction(db: Firestore, ref: DocumentRefe
     if (room.phase !== "lobby" || room.host !== pid) return false;
     if (changes.maxPlayers !== undefined && (!Number.isInteger(changes.maxPlayers) || changes.maxPlayers < Math.max(2, Object.keys(room.players).length) || changes.maxPlayers > 6)) return false;
     if (changes.scoringMode !== undefined && !["cooperative", "competitive"].includes(changes.scoringMode)) return false;
-    tx.update(ref, changes);
+    if (changes.scoringMode === "competitive" && (changes.maxPlayers ?? room.maxPlayers ?? 2) < 3) return false;
+    if (changes.questionsPerPlayer !== undefined && (!Number.isInteger(changes.questionsPerPlayer) || changes.questionsPerPlayer < 1 || changes.questionsPerPlayer > 5)) return false;
+    tx.update(ref, { ...changes, ...(changes.maxPlayers === 2 ? { scoringMode: "cooperative" } : {}) });
     return true;
   });
 }
@@ -62,6 +65,7 @@ export async function startPartyTransaction(db: Firestore, ref: DocumentReferenc
     const room = snap.data() as RoomData;
     const order = [room.host, ...Object.keys(room.players).filter((id) => id !== room.host)];
     if (room.phase !== "lobby" || room.host !== pid || order.length < 2 || order.length > 6 || !usesPartyFlow(room)) return false;
+    if (room.scoringMode === "competitive" && order.length < 3) return false;
     const fresh = freshPartyRound(room, order, 1);
     const party: PartyState = { order, n: 1, round: fresh.round, scores: Object.fromEntries(order.map((id) => [id, 0])), awards: {} };
     tx.update(ref, { party, phase: "clue", score: 0, roundScore: 0, usedSpectra: fresh.used });
@@ -113,7 +117,7 @@ export async function advancePartyTransaction(db: Firestore, ref: DocumentRefere
     const room = snap.data() as RoomData;
     const party = room.party;
     if (room.host !== pid || !party || party.n !== n || room.phase !== expectedPhase) return false;
-    if (room.phase === "reveal" && n % party.order.length === 0) {
+    if (room.phase === "reveal" && n % partyQuestionCount(room) === 0) {
       tx.update(ref, { phase: "summary" });
       return true;
     }

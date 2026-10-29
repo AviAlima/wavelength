@@ -565,7 +565,7 @@ input.input-error { border-color: #f87171; }
   background: rgba(255, 255, 255, .025);
 }
 .setting-title { display: flex; align-items: center; gap: 7px; margin-bottom: 11px; font-size: 14px; font-weight: 750; }
-.qpr-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; direction: ltr; }
+.qpr-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; direction: ltr; }
 .qpr-option {
   min-height: 44px;
   border: 1px solid rgba(166, 178, 200, .16);

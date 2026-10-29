@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css?v=1.21.0">
+<link rel="stylesheet" href="css/style.css?v=1.21.1">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -102,18 +102,21 @@
           <button type="button" class="chip-btn" data-scoring="cooperative" data-i18n="party-coop">Together 🤝</button>
           <button type="button" class="chip-btn" data-scoring="competitive" data-i18n="party-compete">Competitive 🏆</button>
         </div>
+        <p id="competitive-note" class="hint small-hint" data-i18n="competitive-note">Competitive scoring needs at least 3 players.</p>
       </fieldset>
       <p id="party-mode-note" class="hint small-hint"></p>
       <div class="lobby-setting" id="qpr-wrap" hidden>
-        <div class="setting-title"><span aria-hidden="true">⚡</span><span data-i18n="qpr-label">Round length</span></div>
-        <input id="qpr-input" type="hidden" value="6">
-        <div class="qpr-picker" role="group" aria-label="Questions per round">
+        <div class="setting-title"><span aria-hidden="true">⚡</span><span data-i18n="qpr-label">Clues per player</span></div>
+        <input id="qpr-input" type="hidden" value="3">
+        <div class="qpr-picker" role="group" aria-label="Clues per player">
           <button class="qpr-option" type="button" data-value="1">1</button>
+          <button class="qpr-option" type="button" data-value="2">2</button>
           <button class="qpr-option" type="button" data-value="3">3</button>
-          <button class="qpr-option" type="button" data-value="6">6</button>
-          <button class="qpr-option" type="button" data-value="9">9</button>
+          <button class="qpr-option" type="button" data-value="4">4</button>
+          <button class="qpr-option" type="button" data-value="5">5</button>
         </div>
       </div>
+      <p id="qpr-total" class="hint small-hint"></p>
       <p id="lobby-qpr" class="hint" hidden></p>
       <label class="toggle-row compact-toggle" id="collective-wrap" hidden>
         <input type="checkbox" id="collective-toggle" checked>
@@ -257,6 +260,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js?v=1.21.0"></script>
+<script type="module" src="js/game.js?v=1.21.1"></script>
 </body>
 </html>

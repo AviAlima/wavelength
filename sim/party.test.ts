@@ -1,6 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scorePartyRound } from "../src/party-logic.js";
+import { scorePartyRound, partyQuestionCount } from "../src/party-logic.js";
+import { roundQuestionCount, type RoomData } from "../src/game-logic.js";
+
+const roomFor = (count: number, clues: number | undefined): RoomData => ({
+  code: "TEST", host: "0", phase: "lobby", score: 0, round: null, questionsPerPlayer: clues,
+  players: Object.fromEntries(Array.from({ length: count }, (_, i) => [String(i), { id: String(i), name: String(i), color: "blue" }])),
+});
+
+test("one to five clues each produce equal complete rotations for two to six players", () => {
+  for (let players = 2; players <= 6; players++) {
+    for (let clues = 1; clues <= 5; clues++) {
+      const room = roomFor(players, clues);
+      assert.equal(roundQuestionCount(room), players * clues);
+      assert.equal(partyQuestionCount(room), players * clues);
+    }
+  }
+});
+
+test("older rooms retain their existing round lengths", () => {
+  const room = roomFor(2, undefined);
+  room.questionsPerRound = 3;
+  assert.equal(roundQuestionCount(room), 3);
+  assert.equal(partyQuestionCount(roomFor(6, undefined)), 6);
+});
 
 test("each guesser earns their points and the giver earns their average", () => {
   const result = scorePartyRound(["a", "b", "c", "d", "e", "f"], "a", 50, { b: 50, c: 58, d: 65, e: 75, f: 90 });

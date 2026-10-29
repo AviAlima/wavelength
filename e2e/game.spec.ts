@@ -105,23 +105,29 @@ test("round summary after N questions, then continue with accumulated score", as
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
-    await expect(guest.locator("#lobby-qpr")).toContainText("Questions per round: 1");
+    await expect(guest.locator("#lobby-qpr")).toContainText("Clues per player: 1");
+    await expect(host.locator("#qpr-total")).toContainText("2 questions for 2 players");
 
     await host.click("#btn-start");
     await expect(host.locator("#screen-game")).toBeVisible();
     await expect(host.locator("#round-group")).toHaveText("1");
 
-    const hostIsGiver = await host.locator("#giver-panel").isVisible();
-    const giver = hostIsGiver ? host : guest;
-    const guesser = hostIsGiver ? guest : host;
-    await giver.fill("#clue-input", "banana");
-    await giver.click("#btn-send");
-    const dial = guesser.locator("#dial-bar");
-    await dial.click({ position: { x: 350, y: 27 } });
-    await guesser.click("#btn-lock");
-    await expect(host.locator("#reveal-panel")).toBeVisible();
-    await expect(host.locator("#btn-next")).toHaveText("Finish round");
-    await host.click("#btn-next");
+    let expectedScore = 0;
+    for (let question = 1; question <= 2; question++) {
+      await expect(host.locator("#round-num")).toHaveText(String(question));
+      const hostIsGiver = await host.locator("#giver-panel").isVisible();
+      const giver = hostIsGiver ? host : guest;
+      const guesser = hostIsGiver ? guest : host;
+      await giver.fill("#clue-input", "banana");
+      await giver.click("#btn-send");
+      await guesser.locator("#dial-bar").click({ position: { x: 350, y: 27 } });
+      await guesser.click("#btn-lock");
+      await expect(host.locator("#reveal-panel")).toBeVisible();
+      const state = (await (await fetch(roomUrl(code))).json()).fields;
+      expectedScore += pointsFor(num(state.round.mapValue.fields.guess), num(state.round.mapValue.fields.target));
+      await expect(host.locator("#btn-next")).toHaveText(question === 2 ? "Finish round" : "Next question");
+      await host.click("#btn-next");
+    }
 
     await expect(host.locator("#screen-summary")).toBeVisible();
     await expect(guest.locator("#screen-summary")).toBeVisible();
@@ -132,12 +138,10 @@ test("round summary after N questions, then continue with accumulated score", as
     const totalBefore = (await host.textContent("#summary-total"))!;
     const room = (await (await fetch(roomUrl(code))).json()).fields;
     const roundScore = num(room.roundScore);
-    const guess = num(room.round.mapValue.fields.guess);
-    const target = num(room.round.mapValue.fields.target);
-    expect(roundScore).toBe(pointsFor(guess, target));
+    expect(roundScore).toBe(expectedScore);
     await host.click("#btn-continue");
     await expect(host.locator("#screen-game")).toBeVisible();
-    await expect(host.locator("#round-num")).toHaveText("2");
+    await expect(host.locator("#round-num")).toHaveText("3");
     await expect(host.locator("#round-group")).toHaveText("2");
     const totalAfter = (await host.textContent("#score"))!;
     expect(totalAfter).toBe(totalBefore.replace("Total score: ", ""));
@@ -217,10 +221,10 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.21.0");
+  await expect(page.locator("#version")).toHaveText("1.21.1");
   const update = page.getByRole("button", { name: "Update version" });
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.21.0");
+  await expect(page.locator("#version")).toHaveText("1.21.1");
 });
