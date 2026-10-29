@@ -5,7 +5,7 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.18.0";
+const VERSION = "1.19.0";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -100,11 +100,31 @@ const requireName = (): boolean => {
 const myName = () => nickInput.value.trim();
 
 const catLabel = (c: string): string => (getLang() === "he" ? CATEGORY_HE[c] ?? c : c);
+const CATEGORY_ICONS: Record<string, string> = {
+  "Emotions": "💛",
+  "Food & Drink": "🍕",
+  "Nature & Weather": "🌤️",
+  "Animals": "🦊",
+  "People & Society": "🫂",
+  "Technology": "🤖",
+  "Arts & Entertainment": "🎬",
+  "Lifestyle & Routine": "🛋️",
+  "Abstract & Philosophy": "💭",
+};
 
 let catListBuilt = false;
 
+function updateCatCount() {
+  const selected = document.querySelectorAll<HTMLInputElement>("#cat-list input:checked").length;
+  $("cat-count").textContent = selected
+    ? t(`${selected} categories in the mix`, `${selected} קטגוריות במשחק`)
+    : t("All categories, totally random", "כל הקטגוריות, בהפתעה מוחלטת");
+}
+
 function buildCatList() {
   const list = $("cat-list");
+  const previous = new Set(Array.from(list.querySelectorAll<HTMLInputElement>("input:checked")).map((input) => input.value));
+  const hadOptions = list.querySelector("input") !== null;
   list.innerHTML = "";
   CATEGORIES.forEach((c) => {
     const n = SPECTRA_BY_CATEGORY[c].length;
@@ -113,10 +133,25 @@ function buildCatList() {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = c;
-    cb.checked = true;
-    label.append(cb, document.createTextNode(`${catLabel(c)} (${n})`));
+    cb.checked = hadOptions ? previous.has(c) : true;
+    cb.addEventListener("change", updateCatCount);
+    const icon = document.createElement("span");
+    icon.className = "cat-icon";
+    icon.textContent = CATEGORY_ICONS[c] ?? "✨";
+    const copy = document.createElement("span");
+    copy.className = "cat-copy";
+    const title = document.createElement("strong");
+    title.textContent = catLabel(c);
+    const count = document.createElement("small");
+    count.textContent = t(`${n} spectra`, `${n} ספקטרומים`);
+    copy.append(title, count);
+    const check = document.createElement("span");
+    check.className = "cat-check";
+    check.textContent = "✓";
+    label.append(cb, icon, copy, check);
     list.append(label);
   });
+  updateCatCount();
 }
 
 function showCatScreen() {
@@ -129,6 +164,15 @@ function showCatScreen() {
 
 $("btn-create").addEventListener("click", showCatScreen);
 $("btn-back-cats").addEventListener("click", () => show("home"));
+$("btn-cat-all").addEventListener("click", () => {
+  document.querySelectorAll<HTMLInputElement>("#cat-list input").forEach((input) => { input.checked = true; });
+  updateCatCount();
+});
+$("btn-cat-surprise").addEventListener("click", () => {
+  const picks = [...CATEGORIES].sort(() => Math.random() - .5).slice(0, 3);
+  document.querySelectorAll<HTMLInputElement>("#cat-list input").forEach((input) => { input.checked = picks.includes(input.value); });
+  updateCatCount();
+});
 $("btn-create-cats").addEventListener("click", () => {
   const cats = Array.from(document.querySelectorAll<HTMLInputElement>("#cat-list input:checked")).map((i) => i.value);
   createRoom(cats);
@@ -254,7 +298,6 @@ $("btn-copy").addEventListener("click", async () => {
   catch { prompt(t("Party code:", "קוד משחק:"), roomData.code); }
 });
 
-$("btn-create").addEventListener("click", showCatScreen);
 ($("join-input") as HTMLInputElement).addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
 $("btn-join").addEventListener("click", joinRoom);
 
@@ -276,15 +319,17 @@ $("btn-confirm-leave").addEventListener("click", () => {
   leaveRoom();
 });
 
-($("qpr-input") as HTMLInputElement).addEventListener("change", async () => {
-  const inp = $("qpr-input") as HTMLInputElement;
-  let v = parseInt(inp.value, 10);
-  if (isNaN(v)) v = DEFAULT_QUESTIONS_PER_ROUND;
-  v = Math.max(1, Math.min(20, v));
-  inp.value = String(v);
+document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((button) => button.addEventListener("click", async () => {
+  const v = Number(button.dataset.value);
+  ($("qpr-input") as HTMLInputElement).value = String(v);
+  document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((option) => {
+    const selected = option === button;
+    option.classList.toggle("selected", selected);
+    option.setAttribute("aria-pressed", String(selected));
+  });
   if (!roomCode) return;
   try { await updateDoc(ref(), { questionsPerRound: v }); } catch (e) { alert(t("Failed: ", "שגיאה: ") + (e as Error).message); }
-});
+}));
 
 ($("collective-toggle") as HTMLInputElement).addEventListener("change", async () => {
   if (!roomCode) return;
@@ -379,8 +424,12 @@ function renderLobby() {
   if (isHost) {
     $("qpr-wrap").hidden = false;
     $("lobby-qpr").hidden = true;
-    const inp = $("qpr-input") as HTMLInputElement;
-    if (document.activeElement !== inp) inp.value = String(qpr);
+    ($("qpr-input") as HTMLInputElement).value = String(qpr);
+    document.querySelectorAll<HTMLButtonElement>(".qpr-option").forEach((option) => {
+      const selected = Number(option.dataset.value) === qpr;
+      option.classList.toggle("selected", selected);
+      option.setAttribute("aria-pressed", String(selected));
+    });
   } else {
     $("qpr-wrap").hidden = true;
     $("lobby-qpr").hidden = false;
@@ -388,8 +437,8 @@ function renderLobby() {
   }
   const cats = roomData!.categories?.length ? roomData!.categories : null;
   $("lobby-cats").textContent = cats
-    ? t(`Spectra: ${cats.join(", ")}`, `ספקטרומים: ${cats.map(catLabel).join(", ")}`)
-    : t("Spectra: random (all categories)", "ספקטרומים: אקראי (כל הקטגוריות)");
+    ? t(`${cats.length} categories selected`, `${cats.length} קטגוריות נבחרו`)
+    : t("All categories — surprise me", "כל הקטגוריות — בהפתעה");
   const collective = roomData!.collective ?? true;
   if (isHost) {
     const toggle = $("collective-toggle") as HTMLInputElement;
@@ -400,8 +449,8 @@ function renderLobby() {
     $("collective-wrap").hidden = true;
     $("lobby-collective").hidden = false;
     $("lobby-collective").textContent = collective
-      ? t("Answering: all spectra up front — each player sees the secret target and writes clues, then you guess each other's targets", "מענה: כל הספקטרומים מראש — כל שחקן רואה את המטרה הסודית וכותב רמזים, ואז מנחשים זה את המטרות של זה")
-      : t("Answering: one question at a time", "מענה: שאלה אחת בכל פעם");
+      ? t("Party mode: clues first, guesses second", "מצב מסיבה: קודם רמזים, אחר כך ניחושים")
+      : t("Classic mode: one question at a time", "מצב קלאסי: שאלה אחת בכל פעם");
   }
 }
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css?v=1.18.0">
+<link rel="stylesheet" href="css/style.css?v=1.19.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -19,34 +19,56 @@
 <div id="app">
 
   <section id="screen-home" class="screen">
-    <div class="card">
+    <div class="card home-card">
       <div class="lang-toggle" id="lang-toggle" role="group" aria-label="Language">
         <button id="lang-he" class="lang-btn active" type="button">עברית</button>
         <button id="lang-en" class="lang-btn" type="button">English</button>
       </div>
-      <h1 class="logo">Wavelength</h1>
-      <p class="tagline" data-i18n="tagline">2 players. 1 spectrum. How well do you sync?</p>
-      <label class="field">
-        <span data-i18n="label-nick">Your name <em class="required">required</em></span>
+      <div class="home-hero">
+        <div class="home-wave" aria-hidden="true">🌊</div>
+        <h1 class="logo">Wavelength</h1>
+        <p class="tagline" data-i18n="tagline">2 players. 1 spectrum. How well do you sync?</p>
+      </div>
+      <label class="field name-field">
+        <span data-i18n="label-nick">What should we call you?</span>
         <input id="nick-input" placeholder="The name your friends will see" data-i18n-ph="nick-ph" maxlength="20" autocomplete="off">
       </label>
       <p id="nick-error" class="error-text" hidden data-i18n="nick-error">Enter your name first.</p>
-      <button id="btn-create" class="btn primary" data-i18n="btn-create">Create a party</button>
-      <div class="divider"><span data-i18n="or">or</span></div>
-      <label class="field">
-        <span data-i18n="label-join">Join with code</span>
-        <input id="join-input" placeholder="ABCDE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
-      </label>
-      <button id="btn-join" class="btn" data-i18n="btn-join">Join party</button>
+      <div class="home-actions">
+        <button id="btn-create" class="home-action create-action" type="button">
+          <span class="home-action-icon" aria-hidden="true">✨</span>
+          <span><strong data-i18n="btn-create">Create a party</strong><small data-i18n="create-sub">Choose the vibe and invite a friend</small></span>
+          <span class="action-arrow" aria-hidden="true">←</span>
+        </button>
+        <div class="home-action join-action">
+          <span class="home-action-icon" aria-hidden="true">🎟️</span>
+          <div class="join-content">
+            <strong data-i18n="label-join">Join with code</strong>
+            <small data-i18n="join-sub">Got an invite? Jump right in</small>
+            <div class="join-row">
+              <input id="join-input" aria-label="Party code" placeholder="ABCDE" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+              <button id="btn-join" class="btn" type="button" data-i18n="btn-join">Join</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
   <section id="screen-cats" class="screen" hidden>
-    <div class="card">
+    <div class="card categories-card">
+      <p class="eyebrow" data-i18n="setup-step">One tiny setup</p>
       <h2 data-i18n="cats-title">Choose categories</h2>
-      <p class="hint small-hint" data-i18n="cats-hint">Pick which spectra to play with. Nothing selected = random from everything.</p>
+      <p class="hint cats-intro" data-i18n="cats-hint">What do you feel like arguing about?</p>
+      <div class="category-tools">
+        <button id="btn-cat-all" class="chip-btn" type="button" data-i18n="cat-all">Select all</button>
+        <button id="btn-cat-surprise" class="chip-btn surprise" type="button" data-i18n="cat-surprise">Surprise me 🎲</button>
+      </div>
       <div id="cat-list"></div>
-      <button id="btn-create-cats" class="btn primary" data-i18n="btn-create-cats">Create party</button>
+      <div class="category-footer">
+        <span id="cat-count"></span>
+        <button id="btn-create-cats" class="btn primary" data-i18n="btn-create-cats">Create party</button>
+      </div>
       <button id="btn-back-cats" class="btn ghost" data-i18n="btn-back-cats">Back</button>
     </div>
   </section>
@@ -60,23 +82,33 @@
       <h2 data-i18n="players">Players</h2>
       <div id="lobby-players"></div>
       <p id="lobby-waiting" class="hint" data-i18n="lobby-waiting">Waiting for a second player…<br>Share the code above.</p>
-      <label class="field" id="qpr-wrap" hidden>
-        <span data-i18n="qpr-label">Questions per round</span>
-        <input id="qpr-input" type="number" min="1" max="20" value="6" inputmode="numeric">
-      </label>
+      <div class="lobby-setting" id="qpr-wrap" hidden>
+        <div class="setting-title"><span aria-hidden="true">⚡</span><span data-i18n="qpr-label">Round length</span></div>
+        <input id="qpr-input" type="hidden" value="6">
+        <div class="qpr-picker" role="group" aria-label="Questions per round">
+          <button class="qpr-option" type="button" data-value="1">1</button>
+          <button class="qpr-option" type="button" data-value="3">3</button>
+          <button class="qpr-option" type="button" data-value="6">6</button>
+          <button class="qpr-option" type="button" data-value="9">9</button>
+        </div>
+      </div>
       <p id="lobby-qpr" class="hint" hidden></p>
-      <label class="field toggle-row" id="collective-wrap" hidden>
+      <label class="toggle-row compact-toggle" id="collective-wrap" hidden>
         <input type="checkbox" id="collective-toggle" checked>
         <span>
           <span data-i18n="collective-label">All spectra up front</span>
-          <em class="hint-inline" data-i18n="collective-hint">Like the original game: the round's spectra are dealt ahead, each player sees the secret target on their own and writes clues, then you guess each other's targets. Off = one question at a time.</em>
+          <em class="hint-inline" data-i18n="collective-short">Everyone writes clues, then everyone guesses</em>
         </span>
       </label>
       <p id="lobby-collective" class="hint" hidden></p>
       <p id="lobby-cats" class="hint"></p>
       <p id="lobby-note" class="hint" hidden data-i18n="lobby-note">Waiting for the host to start the game…</p>
       <button id="btn-start" class="btn primary" hidden disabled>Start game (waiting…)</button>
-      <p class="hint small-hint" data-i18n="rules-hint">Clue givers alternate every question. Guess within 6 of the target = 4 pts, 12 = 3, 20 = 2, 30 = 1.</p>
+      <details class="game-help">
+        <summary data-i18n="how-it-works">How does it work?</summary>
+        <p data-i18n="collective-hint">Like the original game: everyone writes clues first, then you guess each other's targets.</p>
+        <p data-i18n="rules-hint">The closer the guess, the more points you score.</p>
+      </details>
       <button id="btn-leave" class="btn ghost" data-i18n="btn-leave">Leave party</button>
     </div>
   </section>
@@ -176,6 +208,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js?v=1.18.0"></script>
+<script type="module" src="js/game.js?v=1.19.0"></script>
 </body>
 </html>

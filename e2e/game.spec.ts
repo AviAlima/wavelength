@@ -99,9 +99,9 @@ test("round summary after N questions, then continue with accumulated score", as
     await openHome(host, "Avi");
     const code = await createRoom(host);
     codes.push(code);
-    await host.fill("#qpr-input", "1");
-    await host.locator("#qpr-input").blur();
+    await host.locator('.qpr-option[data-value="1"]').click();
     await expect(host.locator("#qpr-input")).toHaveValue("1");
+    await expect(host.locator('.qpr-option[data-value="1"]')).toHaveClass(/selected/);
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
@@ -217,10 +217,10 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.18.0");
+  await expect(page.locator("#version")).toHaveText("1.19.0");
   const update = page.getByRole("button", { name: "Update version" });
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.18.0");
+  await expect(page.locator("#version")).toHaveText("1.19.0");
 });

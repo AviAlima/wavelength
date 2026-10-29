@@ -5,18 +5,28 @@ test("Hebrew is the default language; toggle switches to English", async ({ page
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator(".card").first()).toHaveCSS("text-align", "right");
-  await expect(page.locator("#btn-create")).toHaveText("צור משחק");
-  await expect(page.locator("#btn-join")).toHaveText("הצטרף למשחק");
+  await expect(page.locator("#btn-create")).toContainText("יצירת משחק");
+  await expect(page.locator("#btn-join")).toHaveText("יאללה");
+  await expect(page.locator(".divider")).toHaveCount(0);
   await expect(page.locator(".lang-btn.active")).toHaveText("עברית");
   await page.locator("#lang-en").click();
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   await expect(page.locator(".card").first()).toHaveCSS("text-align", "left");
-  await expect(page.locator("#btn-create")).toHaveText("Create a party");
-  await expect(page.locator("#btn-join")).toHaveText("Join party");
+  await expect(page.locator("#btn-create")).toContainText("Create a party");
+  await expect(page.locator("#btn-join")).toHaveText("Join");
   await expect(page.locator(".lang-btn.active")).toHaveText("English");
   await page.locator("#lang-he").click();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.locator("#btn-create")).toHaveText("צור משחק");
+  await expect(page.locator("#btn-create")).toContainText("יצירת משחק");
+});
+
+test("category setup is visual and the lobby uses question presets", async ({ page }) => {
+  await openHome(page, "Avi");
+  await page.click("#btn-create");
+  await expect(page.locator(".cat-option")).toHaveCount(9);
+  await page.click("#btn-cat-surprise");
+  await expect(page.locator("#cat-list input:checked")).toHaveCount(3);
+  await expect(page.locator("#cat-count")).toContainText("3 categories");
 });
 
 test("two separate devices join as two players; host starts, guest waits", async ({ browser }) => {

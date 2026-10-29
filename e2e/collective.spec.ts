@@ -36,8 +36,7 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
     await openHome(host, "Avi");
     const code = await createRoom(host, null, { collective: true });
     codes.push(code);
-    await host.fill("#qpr-input", "3");
-    await host.locator("#qpr-input").blur();
+    await host.locator('.qpr-option[data-value="3"]').click();
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
@@ -158,8 +157,7 @@ test("skipping a spectrum deals a fresh one in its place — the question count 
     await openHome(host, "Avi");
     const code = await createRoom(host, null, { collective: true });
     codes.push(code);
-    await host.fill("#qpr-input", "3");
-    await host.locator("#qpr-input").blur();
+    await host.locator('.qpr-option[data-value="3"]').click();
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
