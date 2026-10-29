@@ -23,6 +23,7 @@ export const langLabel = (en: string, he?: string): string => (lang === "he" && 
 export const STRINGS: Record<string, { en: string; he: string }> = {
   tagline: { en: "2 players. 1 spectrum. How well do you sync?", he: "2 שחקנים. ספקטרום אחד. כמה אתם מסונכרנים?" },
   "label-nick": { en: "What should we call you?", he: "איך לקרוא לך?" },
+  "avatar-title": { en: "Pick your character", he: "מי אתם היום?" },
   "nick-ph": { en: "The name your friends will see", he: "השם שהחברים שלך יראו" },
   "nick-error": { en: "Enter your name first.", he: "קודם תכניסו שם." },
   "btn-create": { en: "Create a party", he: "יצירת משחק" },

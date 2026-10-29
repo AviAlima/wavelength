@@ -29,6 +29,17 @@ test("category setup is visual and the lobby uses question presets", async ({ pa
   await expect(page.locator("#cat-count")).toContainText("3 categories");
 });
 
+test("avatar selection survives reload and supports Hebrew labels", async ({ page }) => {
+  await page.goto("/");
+  const cat = page.locator("#avatar-picker").getByRole("button", { name: "חתול", exact: true });
+  await cat.click();
+  await expect(cat).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(page.locator('#avatar-picker [aria-pressed="true"]')).toHaveText("🐱");
+  await page.locator("#lang-en").click();
+  await expect(page.locator("#avatar-picker").getByRole("button", { name: "Cat", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("two separate devices join as two players; host starts, guest waits", async ({ browser }) => {
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();
@@ -41,12 +52,17 @@ test("two separate devices join as two players; host starts, guest waits", async
     const code = await createRoom(host);
     codes.push(code);
     await expect(host.locator(".player-row")).toHaveCount(1);
+    await expect(host.locator(".player-seat-empty")).toBeVisible();
 
     await openHome(guest, "Babi");
+    await guest.locator("#avatar-picker").getByRole("button", { name: "Panda", exact: true }).click();
     await joinRoom(guest, code);
 
     await expect(host.locator(".player-row")).toHaveCount(2);
     await expect(guest.locator(".player-row")).toHaveCount(2);
+    await expect(host.locator(".player-seat-empty")).toHaveCount(0);
+    await expect(host.locator(".player-row").filter({ hasText: "Babi" }).locator(".player-avatar")).toHaveText("🐼");
+    await expect(guest.locator(".player-row").filter({ hasText: "Babi" }).locator(".player-avatar")).toHaveText("🐼");
     await expect(host.locator(".player-row").filter({ hasText: "Avi (you)" })).toHaveCount(1);
     await expect(guest.locator(".player-row").filter({ hasText: "Babi (you)" })).toHaveCount(1);
 

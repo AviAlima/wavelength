@@ -40,7 +40,7 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
-    await expect(guest.locator("#lobby-collective")).toContainText("all spectra up front");
+    await expect(guest.locator("#lobby-collective")).toContainText("Party mode");
 
     await host.click("#btn-start");
     await expect(host.locator("#screen-collect")).toBeVisible();
@@ -78,6 +78,10 @@ test("up-front flow: spectra one at a time, turns alternate, review plays back o
 
     // both sides immediately see whether the guess landed
     await expect(host.locator("#collect-title")).toHaveText("How did you do?", { timeout: 5000 });
+    const reveal = host.locator("#collect-list .reveal-scene");
+    await expect(reveal).toBeVisible();
+    // Snapshot/timer rebuilds must let the reveal finish rather than restart it.
+    await expect(reveal).toHaveClass(/reveal-settled/, { timeout: 3000 });
     await expect(host.locator("#collect-list .q-card .q-pts")).toContainText(/You guessed \d+ — target was \d+ → \+?\d+ pts/);
     await expect(guest.locator("#collect-title")).toHaveText("How did you do?");
     await expect(guest.locator("#collect-list .q-card .q-pts")).toContainText(/Avi guessed \d+ — target was \d+ → \+?\d+ pts/);

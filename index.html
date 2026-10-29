@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wavelength</title>
-<link rel="stylesheet" href="css/style.css?v=1.19.0">
+<link rel="stylesheet" href="css/style.css?v=1.20.0">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
 <script type="importmap">
 {
@@ -34,6 +34,10 @@
         <input id="nick-input" placeholder="The name your friends will see" data-i18n-ph="nick-ph" maxlength="20" autocomplete="off">
       </label>
       <p id="nick-error" class="error-text" hidden data-i18n="nick-error">Enter your name first.</p>
+      <fieldset class="avatar-field">
+        <legend data-i18n="avatar-title">Pick your character</legend>
+        <div id="avatar-picker" class="avatar-picker"></div>
+      </fieldset>
       <div class="home-actions">
         <button id="btn-create" class="home-action create-action" type="button">
           <span class="home-action-icon" aria-hidden="true">✨</span>
@@ -208,6 +212,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/game.js?v=1.19.0"></script>
+<script type="module" src="js/game.js?v=1.20.0"></script>
 </body>
 </html>

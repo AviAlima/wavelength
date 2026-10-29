@@ -159,11 +159,11 @@ test("host can limit the game to chosen categories; every spectrum is from them"
     await openHome(host, "Avi");
     const code = await createRoom(host, ["Animals"]);
     codes.push(code);
-    await expect(host.locator("#lobby-cats")).toContainText("Spectra: Animals");
+    await expect(host.locator("#lobby-cats")).toContainText("1 categories selected");
 
     await openHome(guest, "Babi");
     await joinRoom(guest, code);
-    await expect(guest.locator("#lobby-cats")).toContainText("Spectra: Animals");
+    await expect(guest.locator("#lobby-cats")).toContainText("1 categories selected");
 
     await host.click("#btn-start");
     await expect(host.locator("#screen-game")).toBeVisible();
@@ -217,10 +217,10 @@ test("leave buttons ask for confirmation before leaving", async ({ page }) => {
 
 test("version footer is displayed", async ({ page }: { page: Page }) => {
   await openHome(page, "Avi");
-  await expect(page.locator("#version")).toHaveText("1.19.0");
+  await expect(page.locator("#version")).toHaveText("1.20.0");
   const update = page.getByRole("button", { name: "Update version" });
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.19.0");
+  await expect(page.locator("#version")).toHaveText("1.20.0");
 });

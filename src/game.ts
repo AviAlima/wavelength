@@ -5,7 +5,7 @@ import { pointsFor, startGameTransaction, nextRoundTransaction, continueTransact
 import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 
-const VERSION = "1.19.0";
+const VERSION = "1.20.0";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
@@ -33,6 +33,7 @@ langBtn("lang-en").addEventListener("click", () => { setLang("en"); afterLangCha
 const afterLangChange = () => {
   applyStaticLang();
   syncLangBtns();
+  renderAvatarPicker();
   if (catListBuilt) buildCatList();
   if (roomData) render();
 };
@@ -74,6 +75,39 @@ const setTurnStatus = (id: string, tone: "action" | "waiting" | "success", text:
 };
 
 /* ---------- home ---------- */
+
+const AVATARS = [
+  { icon: "🦊", en: "Fox", he: "שועל" },
+  { icon: "🐱", en: "Cat", he: "חתול" },
+  { icon: "👽", en: "Alien", he: "חייזר" },
+  { icon: "🐼", en: "Panda", he: "פנדה" },
+  { icon: "🦄", en: "Unicorn", he: "חד־קרן" },
+  { icon: "🤖", en: "Robot", he: "רובוט" },
+];
+const safeAvatar = (icon?: string) => AVATARS.find((avatar) => avatar.icon === icon)?.icon ?? AVATARS[0].icon;
+let myAvatar = safeAvatar(localStorage.getItem("wave_avatar") ?? undefined);
+
+function renderAvatarPicker() {
+  const picker = $("avatar-picker");
+  picker.replaceChildren();
+  AVATARS.forEach((avatar) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "avatar-choice";
+    button.textContent = avatar.icon;
+    button.setAttribute("aria-label", t(avatar.en, avatar.he));
+    button.setAttribute("aria-pressed", String(myAvatar === avatar.icon));
+    button.addEventListener("click", () => {
+      myAvatar = avatar.icon;
+      localStorage.setItem("wave_avatar", myAvatar);
+      picker.querySelectorAll("button").forEach((option) => {
+        option.setAttribute("aria-pressed", String(option === button));
+      });
+    });
+    picker.append(button);
+  });
+}
+renderAvatarPicker();
 
 const nickInput = $("nick-input") as HTMLInputElement;
 nickInput.value = localStorage.getItem("wave_nick") || "";
@@ -189,7 +223,7 @@ async function createRoom(categories: string[]) {
       code,
       createdAt: serverTimestamp(),
       host: id,
-      players: { [id]: { id, name: myName(), color: COLORS[0] } },
+      players: { [id]: { id, name: myName(), color: COLORS[0], avatar: myAvatar } },
       phase: "lobby",
       score: 0,
       questionsPerRound: 6,
@@ -226,7 +260,7 @@ async function joinRoom() {
     sessionStorage.setItem("wave_player_id", id);
     myPlayerId = id;
     await updateDoc(doc(db, "rooms", code), {
-      [`players.${id}`]: { id, name: myName(), color: COLORS[pids.length] },
+      [`players.${id}`]: { id, name: myName(), color: COLORS[pids.length], avatar: myAvatar },
     });
     openRoom(code);
   } catch (err) { alert(t("Could not join: ", "לא הצלחנו להצטרף: ") + (err as Error).message); }
@@ -401,19 +435,42 @@ function renderLobby() {
   show("lobby");
   $("lobby-code").textContent = roomData!.code;
   const list = $("lobby-players");
-  list.innerHTML = "";
-  Object.values(roomData!.players).forEach((p) => {
-    const row = document.createElement("div");
-    row.className = "player-row";
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    dot.style.background = p.color;
-    row.append(dot, document.createTextNode(`${p.name}${p.id === myPlayerId ? t(" (you)", " (אתה)") : ""}`));
-    list.append(row);
-  });
+  const players = Object.values(roomData!.players);
+  const signature = JSON.stringify([getLang(), myPlayerId, players]);
+  if (list.dataset.players !== signature) {
+    const previousIds = new Set(Array.from(list.querySelectorAll<HTMLElement>("[data-player]")).map((row) => row.dataset.player));
+    list.replaceChildren();
+    players.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "player-row";
+      row.dataset.player = p.id;
+      if (!previousIds.has(p.id)) row.classList.add("player-arrived");
+      const avatar = document.createElement("span");
+      avatar.className = "player-avatar";
+      avatar.textContent = safeAvatar(p.avatar);
+      avatar.setAttribute("aria-hidden", "true");
+      const name = document.createElement("span");
+      name.className = "player-name";
+      name.textContent = `${p.name}${p.id === myPlayerId ? t(" (you)", " (אתה)") : ""}`;
+      row.append(avatar, name);
+      list.append(row);
+    });
+    if (players.length < 2) {
+      const empty = document.createElement("div");
+      empty.className = "player-seat-empty";
+      const icon = document.createElement("span");
+      icon.className = "player-avatar";
+      icon.textContent = "✦";
+      icon.setAttribute("aria-hidden", "true");
+      const label = document.createElement("span");
+      label.textContent = t("Your friend goes here", "המקום של החבר שלכם");
+      empty.append(icon, label);
+      list.append(empty);
+    }
+    list.dataset.players = signature;
+  }
   const n = Object.values(roomData!.players).length;
   const isHost = roomData!.host === myPlayerId;
-  console.log("[renderLobby]", { isHost, myPlayerId: (myPlayerId ?? "null").slice(0, 4), host: (roomData!.host ?? "").slice(0, 4), wrapHidden: $("collective-wrap").hidden });
   const start = $("btn-start") as HTMLButtonElement;
   start.hidden = !isHost;
   start.disabled = n < 2;
@@ -521,6 +578,23 @@ const miniDial = (c: HTMLElement, markerClass: string, pos: number) => {
   dial.append(bar);
   c.append(dial);
   return { bar, marker: m };
+};
+
+// Keep the reveal's clock across DOM rebuilds from snapshots and the 300ms timer.
+const revealClocks = new Map<string, number>();
+const animateReveal = (el: HTMLElement, key: string, points: number) => {
+  if (!revealClocks.has(key)) {
+    if (revealClocks.size >= 20) revealClocks.delete(revealClocks.keys().next().value!);
+    revealClocks.set(key, performance.now());
+  }
+  const elapsed = performance.now() - revealClocks.get(key)!;
+  el.classList.add("reveal-scene");
+  el.classList.toggle("reveal-hit", points === 4);
+  el.classList.toggle("reveal-settled", elapsed >= 1600);
+  if (el.dataset.revealKey !== key) {
+    el.dataset.revealKey = key;
+    el.style.setProperty("--reveal-elapsed", `${-elapsed}ms`);
+  }
 };
 
 const revealDial = (c: HTMLElement, target: number, guess: number) => {
@@ -689,6 +763,7 @@ function renderGuess() {
     specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     revealDial(c, it.target, it.answer ?? 50);
+    animateReveal(c, `${d.code}:${st.startedAt}:answer:${latest.key}`, pointsFor(it.target, it.answer ?? 50));
     const guesser = Object.keys(d.players).find((p) => p !== it.by)!;
     const who = guesser === myPlayerId ? t("You", "אתה") : d.players[guesser]?.name ?? t("They", "השני");
     const pts = document.createElement("p");
@@ -799,6 +874,7 @@ function renderReveal() {
     specLabels(c, it.left, it.right, it.leftHe, it.rightHe);
     clueBox(c, it.clue);
     revealDial(c, it.target, it.answer ?? 50);
+    animateReveal(c, `${d.code}:${st.startedAt}:review:${idx}`, pointsFor(it.target, it.answer ?? 50));
     const pts = document.createElement("p");
     pts.className = "q-pts";
     const p = pointsFor(it.target, it.answer ?? 50);
@@ -898,7 +974,14 @@ function renderGame() {
     $("reveal-clue").textContent = r.clue;
     $("reveal-delta").textContent = t(`Target ${r.target} vs guess ${r.guess} — off by ${Math.abs(r.target - r.guess)}`, `מטרה ${r.target} לעומת ניחוש ${r.guess} — במרחק ${Math.abs(r.target - r.guess)}`);
     const pts = pointsFor(r.target, r.guess);
+    const revealKey = `${d.code}:round:${r.n}`;
+    animateReveal($("dial-bar"), revealKey, pts);
+    animateReveal($("reveal-panel"), revealKey, pts);
     $("reveal-points").textContent = pts > 0 ? t(`+${pts} points`, `+${pts} נקודות`) : t("+0 points", "+0 נקודות");
+  }
+  if (!revealPhase) {
+    $("dial-bar").classList.remove("reveal-scene", "reveal-hit", "reveal-settled");
+    $("reveal-panel").classList.remove("reveal-scene", "reveal-hit", "reveal-settled");
   }
 
   /* panels */
