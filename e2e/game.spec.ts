@@ -226,5 +226,5 @@ test("version footer is displayed", async ({ page }: { page: Page }) => {
   await expect(update).toBeVisible();
   await update.click();
   await page.waitForURL(/\?refresh=\d+$/);
-  await expect(page.locator("#version")).toHaveText("1.21.1");
+  await expect(page.locator("#version")).toHaveText("1.21.2");
 });
