@@ -6,7 +6,7 @@ import { CATEGORIES, SPECTRA_BY_CATEGORY, CATEGORY_HE } from "./spectra.js";
 import { getLang, setLang, t, langLabel, applyStaticLang } from "./i18n.js";
 import { usesPartyFlow, partyQuestionCount, configurePartyTransaction, joinPlayerTransaction, startPartyTransaction, sendPartyClueTransaction, lockPartyGuessTransaction, advancePartyTransaction, type ScoringMode } from "./party-logic.js";
 
-const VERSION = "1.21.1";
+const VERSION = "1.21.2";
 document.getElementById("version")!.textContent = VERSION;
 
 document.getElementById("btn-update-version")!.addEventListener("click", () => {
